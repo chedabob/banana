@@ -6,7 +6,19 @@ env.useBrowserCache = true;
 const MOBILENET_MODEL = 'Xenova/mobilenet-v2';
 const SMOLVLM_MODEL = 'HuggingFaceTB/SmolVLM-256M-Instruct';
 
-const hasWebGPU = typeof navigator !== 'undefined' && 'gpu' in navigator;
+// iOS Safari exposes navigator.gpu but can't run large VLMs — skip it entirely
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+async function checkWebGPUViable() {
+    if (isIOS) return false;
+    if (!('gpu' in navigator)) return false;
+    try {
+        const adapter = await navigator.gpu.requestAdapter();
+        return !!adapter;
+    } catch {
+        return false;
+    }
+}
 
 const STAGES = [
     { id: 'unripe',   emoji: '🟢', title: 'Unripe — Not Yet',     desc: 'This banana needs more time. Leave it at room temperature for 3–5 days until it turns yellow.', pos: 7 },
@@ -62,7 +74,9 @@ async function loadModel() {
     show('loading');
     hide('start-screen');
 
-    if (hasWebGPU) {
+    const webGPUViable = await checkWebGPUViable();
+
+    if (webGPUViable) {
         el('loading-text').textContent = 'Loading SmolVLM-256M (~200 MB, cached after this)...';
         el('progress-fill').style.width = '3%';
         try {

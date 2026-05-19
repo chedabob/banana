@@ -36,9 +36,7 @@
                 <div class="start-emoji">&#x1F34C;</div>
                 <h2>Ready to detect?</h2>
                 <p>Point your camera at a banana and I&rsquo;ll tell you if it&rsquo;s ready to eat &mdash; all on your device.</p>
-                <p class="engine-note" id="engine-note">
-                    &#x1F9E0; WebGPU detected &mdash; will use <strong>SmolVLM-256M</strong> for smart visual reasoning.
-                </p>
+                <p class="engine-note" id="engine-note"></p>
             </div>
 
             <canvas id="canvas" class="hidden"></canvas>
@@ -86,13 +84,20 @@
         </footer>
     </div>
 
-    <script type="module" src="app.js"></script>
     <script>
-        // Show WebGPU note only if supported; hide otherwise
-        if (!('gpu' in navigator)) {
+        // Set engine note before module loads so there's no blank flash
+        (function() {
             const note = document.getElementById('engine-note');
-            if (note) note.textContent = '⚡ Running MobileNet-v2 + color analysis (WebGPU not available).';
-        }
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            const hasGPU = 'gpu' in navigator;
+            if (!note) return;
+            if (!isIOS && hasGPU) {
+                note.innerHTML = '&#x1F9E0; WebGPU detected &mdash; will use <strong>SmolVLM-256M</strong> for smart visual reasoning.';
+            } else {
+                note.textContent = '⚡ Running MobileNet-v2 + color analysis.';
+            }
+        })();
     </script>
+    <script type="module" src="app.js"></script>
 </body>
 </html>
