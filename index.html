@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Banana Detector 🍌</title>
+    <title>Banana Detector &#x1F34C;</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#FFD700">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -15,8 +15,9 @@
 <body>
     <div class="app">
         <header class="app-header">
-            <h1>🍌 Banana Detector</h1>
+            <h1>&#x1F34C; Banana Detector</h1>
             <p class="subtitle">Find the perfect banana to eat</p>
+            <div id="mode-indicator" class="mode-indicator hidden"></div>
         </header>
 
         <main class="app-main">
@@ -32,15 +33,18 @@
             </div>
 
             <div id="start-screen" class="start-screen">
-                <div class="start-emoji">🍌</div>
+                <div class="start-emoji">&#x1F34C;</div>
                 <h2>Ready to detect?</h2>
-                <p>Point your camera at a banana and I'll tell you if it's ready to eat — all on your device.</p>
+                <p>Point your camera at a banana and I&rsquo;ll tell you if it&rsquo;s ready to eat &mdash; all on your device.</p>
+                <p class="engine-note" id="engine-note">
+                    &#x1F9E0; WebGPU detected &mdash; will use <strong>SmolVLM-256M</strong> for smart visual reasoning.
+                </p>
             </div>
 
             <canvas id="canvas" class="hidden"></canvas>
 
             <div id="loading" class="loading hidden">
-                <div class="banana-spinner">🍌</div>
+                <div class="banana-spinner">&#x1F34C;</div>
                 <p id="loading-text">Loading AI model...</p>
                 <div class="progress-bar">
                     <div id="progress-fill" class="progress-fill"></div>
@@ -67,21 +71,28 @@
 
         <div class="controls">
             <button id="btn-start" class="btn btn-primary">
-                <span class="btn-icon">📷</span> Start Camera
+                <span class="btn-icon">&#x1F4F7;</span> Start Camera
             </button>
             <button id="btn-capture" class="btn btn-capture hidden">
-                <span class="btn-icon">🍌</span> Analyze Banana
+                <span class="btn-icon">&#x1F34C;</span> Analyze Banana
             </button>
             <button id="btn-retake" class="btn btn-secondary hidden">
-                <span class="btn-icon">↩</span> Try Another
+                <span class="btn-icon">&#x21A9;</span> Try Another
             </button>
         </div>
 
         <footer class="app-footer">
-            <p>🔒 100% on-device &mdash; photos never leave your phone</p>
+            <p>&#x1F512; 100% on-device &mdash; photos never leave your phone</p>
         </footer>
     </div>
 
     <script type="module" src="app.js"></script>
+    <script>
+        // Show WebGPU note only if supported; hide otherwise
+        if (!('gpu' in navigator)) {
+            const note = document.getElementById('engine-note');
+            if (note) note.textContent = '⚡ Running MobileNet-v2 + color analysis (WebGPU not available).';
+        }
+    </script>
 </body>
 </html>
