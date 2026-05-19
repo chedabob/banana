@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Banana Detector &#x1F34C;</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#FFD700">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Banana">
+    <link rel="apple-touch-icon" href="icon.svg">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app">
+        <header class="app-header">
+            <h1>&#x1F34C; Banana Detector</h1>
+            <p class="subtitle">Find the perfect banana to eat</p>
+            <div id="mode-indicator" class="mode-indicator hidden"></div>
+        </header>
+
+        <main class="app-main">
+            <div id="camera-view" class="camera-view hidden">
+                <video id="video" autoplay playsinline muted></video>
+                <div class="camera-overlay">
+                    <div class="focus-box"></div>
+                </div>
+            </div>
+
+            <div id="preview-view" class="preview-view hidden">
+                <img id="preview-img" alt="Captured photo">
+            </div>
+
+            <div id="start-screen" class="start-screen">
+                <div class="start-emoji">&#x1F34C;</div>
+                <h2>Ready to detect?</h2>
+                <p>Point your camera at a banana and I&rsquo;ll tell you if it&rsquo;s ready to eat &mdash; all on your device.</p>
+                <p class="engine-note" id="engine-note">
+                    &#x1F9E0; WebGPU detected &mdash; will use <strong>SmolVLM-256M</strong> for smart visual reasoning.
+                </p>
+            </div>
+
+            <canvas id="canvas" class="hidden"></canvas>
+
+            <div id="loading" class="loading hidden">
+                <div class="banana-spinner">&#x1F34C;</div>
+                <p id="loading-text">Loading AI model...</p>
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+            </div>
+
+            <div id="result" class="result hidden">
+                <div class="result-emoji" id="result-emoji"></div>
+                <h2 id="result-title"></h2>
+                <p id="result-desc"></p>
+                <div class="ripeness-bar">
+                    <div class="ripeness-labels">
+                        <span>Unripe</span>
+                        <span>Perfect</span>
+                        <span>Overripe</span>
+                    </div>
+                    <div class="ripeness-track">
+                        <div id="ripeness-indicator" class="ripeness-indicator"></div>
+                    </div>
+                </div>
+                <p id="model-info" class="model-info"></p>
+            </div>
+        </main>
+
+        <div class="controls">
+            <button id="btn-start" class="btn btn-primary">
+                <span class="btn-icon">&#x1F4F7;</span> Start Camera
+            </button>
+            <button id="btn-capture" class="btn btn-capture hidden">
+                <span class="btn-icon">&#x1F34C;</span> Analyze Banana
+            </button>
+            <button id="btn-retake" class="btn btn-secondary hidden">
+                <span class="btn-icon">&#x21A9;</span> Try Another
+            </button>
+        </div>
+
+        <footer class="app-footer">
+            <p>&#x1F512; 100% on-device &mdash; photos never leave your phone</p>
+        </footer>
+    </div>
+
+    <script type="module" src="app.js"></script>
+    <script>
+        // Show WebGPU note only if supported; hide otherwise
+        if (!('gpu' in navigator)) {
+            const note = document.getElementById('engine-note');
+            if (note) note.textContent = '⚡ Running MobileNet-v2 + color analysis (WebGPU not available).';
+        }
+    </script>
+</body>
+</html>
