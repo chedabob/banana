@@ -1,0 +1,25 @@
+{
+    "name": "Banana Detector",
+    "short_name": "Banana",
+    "description": "On-device AI to find the perfect banana to eat",
+    "start_url": "./",
+    "display": "standalone",
+    "orientation": "portrait-primary",
+    "background_color": "#1a1a2e",
+    "theme_color": "#FFD700",
+    "categories": ["food", "utilities"],
+    "icons": [
+        {
+            "src": "icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        },
+        {
+            "src": "icon-maskable.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "maskable"
+        }
+    ]
+}
