@@ -1,4 +1,4 @@
-const CACHE = 'banana-detector-v1';
+const CACHE = 'banana-detector-v2';
 const PRECACHE = ['./', './index.html', './style.css', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
@@ -16,9 +16,7 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-    // Let CDN requests (Transformers.js + model weights) bypass service worker
     if (e.request.url.includes('jsdelivr.net') || e.request.url.includes('huggingface.co')) return;
-
     e.respondWith(
         caches.match(e.request).then(cached => {
             if (cached) return cached;

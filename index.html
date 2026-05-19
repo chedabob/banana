@@ -13,91 +13,88 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="app">
-        <header class="app-header">
-            <h1>&#x1F34C; Banana Detector</h1>
-            <p class="subtitle">Find the perfect banana to eat</p>
-            <div id="mode-indicator" class="mode-indicator hidden"></div>
-        </header>
+<div class="app">
 
-        <main class="app-main">
-            <div id="camera-view" class="camera-view hidden">
-                <video id="video" autoplay playsinline muted></video>
-                <div class="camera-overlay">
-                    <div class="focus-box"></div>
-                </div>
-            </div>
+    <header class="app-header">
+        <h1>&#x1F34C; Banana Detector</h1>
+        <p class="subtitle">Find the perfect banana to eat</p>
+        <div id="mode-indicator" class="mode-indicator hidden"></div>
+    </header>
 
-            <div id="preview-view" class="preview-view hidden">
-                <img id="preview-img" alt="Captured photo">
-            </div>
+    <div id="status-bar" class="status-bar hidden"></div>
 
-            <div id="start-screen" class="start-screen">
-                <div class="start-emoji">&#x1F34C;</div>
-                <h2>Ready to detect?</h2>
-                <p>Point your camera at a banana and I&rsquo;ll tell you if it&rsquo;s ready to eat &mdash; all on your device.</p>
-                <p class="engine-note" id="engine-note"></p>
-            </div>
+    <main class="app-main">
 
-            <canvas id="canvas" class="hidden"></canvas>
-
-            <div id="loading" class="loading hidden">
-                <div class="banana-spinner">&#x1F34C;</div>
-                <p id="loading-text">Loading AI model...</p>
-                <div class="progress-bar">
-                    <div id="progress-fill" class="progress-fill"></div>
-                </div>
-            </div>
-
-            <div id="result" class="result hidden">
-                <div class="result-emoji" id="result-emoji"></div>
-                <h2 id="result-title"></h2>
-                <p id="result-desc"></p>
-                <div class="ripeness-bar">
-                    <div class="ripeness-labels">
-                        <span>Unripe</span>
-                        <span>Perfect</span>
-                        <span>Overripe</span>
-                    </div>
-                    <div class="ripeness-track">
-                        <div id="ripeness-indicator" class="ripeness-indicator"></div>
-                    </div>
-                </div>
-                <p id="model-info" class="model-info"></p>
-            </div>
-        </main>
-
-        <div class="controls">
-            <button id="btn-start" class="btn btn-primary">
-                <span class="btn-icon">&#x1F4F7;</span> Start Camera
-            </button>
-            <button id="btn-capture" class="btn btn-capture hidden">
-                <span class="btn-icon">&#x1F34C;</span> Analyze Banana
-            </button>
-            <button id="btn-retake" class="btn btn-secondary hidden">
-                <span class="btn-icon">&#x21A9;</span> Try Another
-            </button>
+        <div id="camera-view" class="camera-view hidden">
+            <video id="video" autoplay playsinline muted></video>
+            <div class="camera-overlay"><div class="focus-box"></div></div>
         </div>
 
-        <footer class="app-footer">
-            <p>&#x1F512; 100% on-device &mdash; photos never leave your phone</p>
-        </footer>
+        <div id="preview-view" class="preview-view hidden">
+            <img id="preview-img" alt="Captured photo">
+        </div>
+
+        <div id="start-screen" class="start-screen">
+            <div class="start-emoji">&#x1F34C;</div>
+            <h2>Ready to detect?</h2>
+            <p>Point your camera at a banana and I&rsquo;ll tell you if it&rsquo;s ready to eat &mdash; all on your device.</p>
+            <p class="engine-note" id="engine-note"></p>
+        </div>
+
+        <canvas id="canvas" class="hidden"></canvas>
+
+        <div id="loading" class="loading hidden">
+            <div class="banana-spinner">&#x1F34C;</div>
+            <p id="loading-text">Loading&hellip;</p>
+            <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+        </div>
+
+        <div id="result" class="result hidden">
+            <div class="result-emoji" id="result-emoji"></div>
+            <h2 id="result-title"></h2>
+            <p id="result-desc"></p>
+            <div class="ripeness-bar">
+                <div class="ripeness-labels"><span>Unripe</span><span>Perfect</span><span>Overripe</span></div>
+                <div class="ripeness-track">
+                    <div id="ripeness-indicator" class="ripeness-indicator"></div>
+                </div>
+            </div>
+            <p id="model-info" class="model-info"></p>
+        </div>
+
+    </main>
+
+    <div class="controls">
+        <button id="btn-start"   class="btn btn-primary">&#x1F4F7; Start Camera</button>
+        <button id="btn-capture" class="btn btn-capture hidden">&#x1F34C; Analyse Banana</button>
+        <button id="btn-retake"  class="btn btn-secondary hidden">&#x21A9; Try Another</button>
     </div>
 
-    <script>
-        // Set engine note before module loads so there's no blank flash
-        (function() {
-            const note = document.getElementById('engine-note');
-            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-            const hasGPU = 'gpu' in navigator;
-            if (!note) return;
-            if (!isIOS && hasGPU) {
-                note.innerHTML = '&#x1F9E0; WebGPU detected &mdash; will use <strong>SmolVLM-256M</strong> for smart visual reasoning.';
-            } else {
-                note.textContent = '⚡ Running MobileNet-v2 + color analysis.';
-            }
-        })();
-    </script>
-    <script type="module" src="app.js"></script>
+    <section class="samples-section">
+        <p class="samples-title">&#x1F9EA; Test samples &mdash; tap to analyse without a real banana</p>
+        <div id="samples-grid" class="samples-grid"></div>
+    </section>
+
+    <footer class="app-footer">
+        <p>&#x1F512; 100% on-device &mdash; photos never leave your phone</p>
+    </footer>
+
+</div>
+
+<script>
+    (function(){
+        const note=document.getElementById('engine-note');
+        if (!note) return;
+        const ios=/iPad|iPhone|iPod/.test(navigator.userAgent);
+        if (ios) {
+            note.textContent='⚡ iOS detected — using fast colour analysis (no model download needed).';
+        } else if ('gpu' in navigator) {
+            note.innerHTML='🤖 WebGPU detected — will load <strong>SmolVLM-256M</strong> for smart visual reasoning (~200 MB, cached).';
+        } else {
+            note.textContent='⚡ Will use MobileNet-v2 + colour analysis (~13 MB).';
+        }
+    })();
+</script>
+<script type="module" src="app.js"></script>
 </body>
 </html>
