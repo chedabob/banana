@@ -13,18 +13,26 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="app">
 
+<!-- Splash: blocks UI while model loads -->
+<div id="splash" class="splash" role="status" aria-live="polite">
+    <div class="splash-inner">
+        <div class="splash-banana" aria-hidden="true">&#x1F34C;</div>
+        <h1>Banana Detector</h1>
+        <div class="splash-bar"><div id="splash-fill" class="splash-fill"></div></div>
+        <p id="splash-status">Starting up&hellip;</p>
+        <p class="splash-hint">First load only &mdash; model is cached after this</p>
+    </div>
+</div>
+
+<div class="app">
     <header class="app-header">
         <h1>&#x1F34C; Banana Detector</h1>
         <p class="subtitle">Find the perfect banana to eat</p>
-        <div id="mode-indicator" class="mode-indicator hidden"></div>
+        <p id="mode-indicator" class="mode-indicator hidden"></p>
     </header>
 
-    <div id="status-bar" class="status-bar hidden"></div>
-
     <main class="app-main">
-
         <div id="camera-view" class="camera-view hidden">
             <video id="video" autoplay playsinline muted></video>
             <div class="camera-overlay"><div class="focus-box"></div></div>
@@ -35,25 +43,24 @@
         </div>
 
         <div id="start-screen" class="start-screen">
-            <div class="start-emoji">&#x1F34C;</div>
+            <div class="start-emoji" aria-hidden="true">&#x1F34C;</div>
             <h2>Ready to detect?</h2>
             <p>Point your camera at a banana and I&rsquo;ll tell you if it&rsquo;s ready to eat &mdash; all on your device.</p>
-            <p class="engine-note" id="engine-note"></p>
         </div>
 
         <canvas id="canvas" class="hidden"></canvas>
 
-        <div id="loading" class="loading hidden">
-            <div class="banana-spinner">&#x1F34C;</div>
-            <p id="loading-text">Loading&hellip;</p>
+        <div id="loading" class="loading hidden" role="status" aria-live="polite">
+            <div class="banana-spinner" aria-hidden="true">&#x1F34C;</div>
+            <p id="loading-text">Analysing&hellip;</p>
             <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
         </div>
 
         <div id="result" class="result hidden">
-            <div class="result-emoji" id="result-emoji"></div>
+            <div class="result-emoji" id="result-emoji" aria-hidden="true"></div>
             <h2 id="result-title"></h2>
             <p id="result-desc"></p>
-            <div class="ripeness-bar">
+            <div class="ripeness-bar" aria-hidden="true">
                 <div class="ripeness-labels"><span>Unripe</span><span>Perfect</span><span>Overripe</span></div>
                 <div class="ripeness-track">
                     <div id="ripeness-indicator" class="ripeness-indicator"></div>
@@ -61,7 +68,6 @@
             </div>
             <p id="model-info" class="model-info"></p>
         </div>
-
     </main>
 
     <div class="controls">
@@ -71,30 +77,15 @@
     </div>
 
     <section class="samples-section">
-        <p class="samples-title">&#x1F9EA; Test samples &mdash; tap to analyse without a real banana</p>
+        <p class="samples-title">Test samples &mdash; tap to analyse without a real banana</p>
         <div id="samples-grid" class="samples-grid"></div>
     </section>
 
     <footer class="app-footer">
-        <p>&#x1F512; 100% on-device &mdash; photos never leave your phone</p>
+        <p>100% on-device &mdash; photos never leave your phone</p>
     </footer>
-
 </div>
 
-<script>
-    (function(){
-        const note=document.getElementById('engine-note');
-        if (!note) return;
-        const ios=/iPad|iPhone|iPod/.test(navigator.userAgent);
-        if (ios) {
-            note.textContent='⚡ iOS detected — using fast colour analysis (no model download needed).';
-        } else if ('gpu' in navigator) {
-            note.innerHTML='🤖 WebGPU detected — will load <strong>SmolVLM-256M</strong> for smart visual reasoning (~200 MB, cached).';
-        } else {
-            note.textContent='⚡ Will use MobileNet-v2 + colour analysis (~13 MB).';
-        }
-    })();
-</script>
 <script type="module" src="app.js"></script>
 </body>
 </html>
