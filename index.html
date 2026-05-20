@@ -21,7 +21,7 @@
         <h1>Banana Detector</h1>
         <div class="splash-bar"><div id="splash-fill" class="splash-fill"></div></div>
         <p id="splash-status">Starting up&hellip;</p>
-        <p class="splash-hint">First load only &mdash; model is cached after this</p>
+        <p class="splash-hint">First load only &mdash; detector is cached after this</p>
     </div>
 </div>
 
@@ -55,6 +55,8 @@
             <p id="loading-text">Analysing&hellip;</p>
             <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
         </div>
+
+        <div id="shelf-result" class="shelf-result hidden" role="list" aria-label="Bananas ranked by ripeness"></div>
 
         <div id="result" class="result hidden">
             <div class="result-emoji" id="result-emoji" aria-hidden="true"></div>

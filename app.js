@@ -3,15 +3,7 @@ import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transfo
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
-const MOBILENET_MODEL = 'Xenova/mobilenet-v2';
-const SMOLVLM_MODEL   = 'HuggingFaceTB/SmolVLM-256M-Instruct';
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-
-async function checkWebGPUViable() {
-    if (isIOS) return false;
-    if (!('gpu' in navigator)) return false;
-    try { return !!(await navigator.gpu.requestAdapter()); } catch { return false; }
-}
 
 const STAGES = [
     { id:'unripe',   emoji:'🟢', title:'Unripe — Not Yet',     desc:'This banana needs more time. Leave it at room temperature for 3–5 days until it turns yellow.',            pos: 7  },
@@ -21,7 +13,10 @@ const STAGES = [
     { id:'overripe', emoji:'🍞', title:'Overripe — Bake It!',  desc:"Too soft to eat fresh, but perfect for banana bread, muffins, or pancakes. Don't throw it out!", pos: 92 }
 ];
 
-let vlmPipe = null, classifier = null, modelLoading = false, useVLM = false, cameraStream = null;
+let detector  = null;   // YOLOS-tiny (non-iOS, via Transformers.js)
+let cocoModel = null;   // COCO-SSD (iOS, via TF.js)
+let modelLoading = false;
+let cameraStream = null;
 
 const el    = id => document.getElementById(id);
 const show  = (...ids) => ids.forEach(id => el(id)?.classList.remove('hidden'));
@@ -48,68 +43,59 @@ function setModeIndicator(text) {
     if (ind) { ind.textContent = text; ind.classList.remove('hidden'); }
 }
 
-// ---- Model loading (runs on startup, blocks via splash) ----
+// ---- Model loading ----
 
-async function loadMobileNet() {
-    setSplash('⏳ Downloading MobileNet (~13 MB)…', 5);
-    try {
-        classifier = await pipeline('image-classification', MOBILENET_MODEL, {
-            progress_callback: ({ status, progress }) => {
-                if (status === 'progress' && progress != null) {
-                    setSplash(`⏳ Downloading MobileNet… ${Math.round(progress)}%`, 5 + progress * 0.88);
-                }
-            }
-        });
-        setModeIndicator('MobileNet-v2 + colour analysis');
-        setSplash('✓ MobileNet loaded', 100);
-        await delay(400);
-    } catch (err) {
-        console.error('MobileNet load error:', err);
-        setModeIndicator('Colour analysis only');
-        setSplash(`! Model failed — will use colour analysis\n(${(err?.message ?? String(err)).slice(0,100)})`, 100);
-        await delay(2500);
-    }
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+        const s = document.createElement('script');
+        s.src = src; s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+    });
 }
 
-async function loadSmolVLM() {
-    setSplash('⏳ Loading SmolVLM-256M (~200 MB, cached after this)…', 3);
-    try {
-        vlmPipe = await pipeline('image-text-to-text', SMOLVLM_MODEL, {
-            device: 'webgpu',
-            dtype: { embed_tokens:'q8', vision_encoder:'q8', decoder_model_merged:'q4' },
-            progress_callback: ({ status, progress }) => {
-                if (status === 'progress' && progress != null) {
-                    setSplash(`⏳ SmolVLM: ${Math.round(progress)}%`, 3 + progress * 0.9);
-                }
+async function loadCocoSsd() {
+    setSplash('⏳ Loading banana detector…', 5);
+    await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
+    setSplash('⏳ Loading banana detector… 40%', 40);
+    await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
+    setSplash('⏳ Initialising…', 70);
+    await window.tf.setBackend('webgl');
+    cocoModel = await window.cocoSsd.load({ base: 'lite_mobilenet_v2' });
+    setModeIndicator('COCO-SSD · colour analysis');
+    setSplash('✓ Ready', 100);
+    await delay(400);
+}
+
+async function loadYolos() {
+    setSplash('⏳ Loading banana detector (~7 MB, cached after this)…', 3);
+    detector = await pipeline('object-detection', 'Xenova/yolos-tiny', {
+        device: 'wasm',
+        progress_callback: ({ status, progress }) => {
+            if (status === 'progress' && progress != null) {
+                setSplash(`⏳ Loading detector: ${Math.round(progress)}%`, 3 + progress * 0.9);
             }
-        });
-        useVLM = true;
-        setModeIndicator('SmolVLM-256M · WebGPU');
-        setSplash('✓ SmolVLM ready', 100);
-        await delay(400);
-    } catch (err) {
-        console.error('SmolVLM failed:', err);
-        setSplash('! SmolVLM failed — loading MobileNet instead…', 50);
-        vlmPipe = null; useVLM = false;
-        await delay(800);
-        await loadMobileNet();
-    }
+        }
+    });
+    setModeIndicator('YOLOS-tiny · colour analysis');
+    setSplash('✓ Ready', 100);
+    await delay(400);
 }
 
 async function loadModel() {
-    if (vlmPipe || classifier || modelLoading) return;
+    if (detector || cocoModel || modelLoading) return;
     modelLoading = true;
     try {
         if (isIOS) {
-            setSplash('⏳ Setting up…', 40);
-            await delay(150);
-            setModeIndicator('Colour analysis · iOS');
-            setSplash('✓ Ready', 100);
-            await delay(350);
+            await loadCocoSsd();
         } else {
-            const gpuViable = await checkWebGPUViable();
-            if (gpuViable) await loadSmolVLM(); else await loadMobileNet();
+            await loadYolos();
         }
+    } catch (err) {
+        console.error('Detector load failed:', err);
+        setModeIndicator('Colour analysis only');
+        setSplash(`! Detector failed — colour analysis only\n(${(err?.message ?? String(err)).slice(0,80)})`, 100);
+        await delay(2500);
     } finally {
         modelLoading = false;
         hideSplash();
@@ -119,7 +105,7 @@ async function loadModel() {
 // ---- Camera ----
 
 async function startCamera() {
-    hide('btn-start', 'start-screen', 'result');
+    hide('btn-start', 'start-screen', 'result', 'shelf-result');
     try {
         cameraStream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode:'environment', width:{ ideal:1280 }, height:{ ideal:960 } }
@@ -137,7 +123,7 @@ function captureFrame() {
     canvas.width  = video.videoWidth  || 640;
     canvas.height = video.videoHeight || 480;
     canvas.getContext('2d').drawImage(video, 0, 0);
-    return canvas.toDataURL('image/jpeg', 0.92);
+    return canvas;
 }
 
 function stopCamera() {
@@ -145,31 +131,40 @@ function stopCamera() {
     cameraStream = null;
 }
 
-// ---- VLM path ----
+// ---- Detection ----
 
-async function analyzeWithVLM(dataUrl) {
-    const messages = [{ role:'user', content:[
-        { type:'image', url: dataUrl },
-        { type:'text',  text:'Is there a banana in this image? If yes, assess its ripeness as exactly one of: unripe, nearly-ripe, perfect, ripe, overripe. Reply with the ripeness word first, then one sentence describing what you see. If no banana: not-a-banana.' }
-    ]}];
-    const out = await vlmPipe(messages, { max_new_tokens:80 });
-    const last = out[0].generated_text.at(-1);
-    const c = last.content;
-    return (typeof c==='string'?c:Array.isArray(c)?(c.find(x=>x.type==='text')?.text??''):String(c)).trim();
+async function runDetection(canvas) {
+    if (cocoModel) {
+        // TF.js COCO-SSD: bbox = [x, y, w, h] in pixels
+        const preds = await cocoModel.detect(canvas);
+        return preds
+            .filter(p => p.class === 'banana' && p.score > 0.45)
+            .map(p => ({
+                label: p.class, score: p.score,
+                box: { x: Math.round(p.bbox[0]), y: Math.round(p.bbox[1]),
+                       w: Math.round(p.bbox[2]), h: Math.round(p.bbox[3]) }
+            }));
+    }
+    if (detector) {
+        // Transformers.js YOLOS: box = {xmin, ymin, xmax, ymax} in pixels
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        const preds = await detector(dataUrl, { threshold: 0.45 });
+        return preds
+            .filter(p => p.label === 'banana')
+            .map(p => ({
+                label: p.label, score: p.score,
+                box: { x: Math.round(p.box.xmin), y: Math.round(p.box.ymin),
+                       w: Math.round(p.box.xmax - p.box.xmin), h: Math.round(p.box.ymax - p.box.ymin) }
+            }));
+    }
+    return null; // no detector loaded
 }
 
-function parseVLMResponse(text) {
-    const lo = text.toLowerCase();
-    if (/not.a.banana|no banana|cannot see|don.t see|i see no/i.test(lo)) return { stage:null, explanation:text };
-    let stage;
-    if      (/over.?ripe/i.test(lo))                   stage = STAGES[4];
-    else if (/nearly.?ripe|almost ripe/i.test(lo))     stage = STAGES[1];
-    else if (/\bperfect/i.test(lo))                    stage = STAGES[2];
-    else if (/unripe|un.ripe|not.?ripe/i.test(lo))     stage = STAGES[0];
-    else if (/\bripe\b/i.test(lo))                     stage = STAGES[3];
-    else                                                stage = STAGES[2];
-    const explanation = text.replace(/^(overripe|over-ripe|nearly-ripe|nearly ripe|perfect|unripe|ripe)[,\.\s]*/i,'').trim();
-    return { stage, explanation: explanation.length>10 ? explanation : stage.desc };
+function cropCanvas(src, box) {
+    const c = document.createElement('canvas');
+    c.width = box.w; c.height = box.h;
+    c.getContext('2d').drawImage(src, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
+    return c;
 }
 
 // ---- Colour analysis ----
@@ -184,9 +179,11 @@ function rgbToHsl(r,g,b) {
     return [h*360,s,l];
 }
 
-function analyzeRipeness(ctx, w, h) {
-    const pad=0.2;
-    const { data } = ctx.getImageData(Math.floor(w*pad), Math.floor(h*pad), Math.floor(w*(1-pad*2)), Math.floor(h*(1-pad*2)));
+function analyzeRipeness(ctx, w, h, pad = 0.2) {
+    const { data } = ctx.getImageData(
+        Math.floor(w*pad), Math.floor(h*pad),
+        Math.floor(w*(1-pad*2)), Math.floor(h*(1-pad*2))
+    );
     const counts=[0,0,0,0,0]; let relevant=0;
     for (let i=0; i<data.length; i+=4) {
         const [hue,s,l]=rgbToHsl(data[i],data[i+1],data[i+2]);
@@ -198,7 +195,7 @@ function analyzeRipeness(ctx, w, h) {
         else if (hue>=25&&hue<44)   counts[3]++;
         else if (hue<25||hue>330)   counts[4]++;
     }
-    if (relevant<100) return null;
+    if (relevant<80) return null;
     const t=counts.reduce((a,b)=>a+b,0)||1;
     return counts[0]/t*0.05+counts[1]/t*0.28+counts[2]/t*0.52+counts[3]/t*0.76+counts[4]/t*0.95;
 }
@@ -209,85 +206,138 @@ function stageFromScore(s) {
     return STAGES[4];
 }
 
-async function analyzeFallback(dataUrl) {
-    show('loading'); hide('result');
-    el('loading-text').textContent = 'Analysing colours…';
-    el('progress-fill').style.width = '30%';
+// ---- Annotation ----
 
-    const canvas=el('canvas'), ctx=canvas.getContext('2d');
-    const colorScore=analyzeRipeness(ctx, canvas.width, canvas.height);
-    el('progress-fill').style.width = '65%';
+function drawBananaBoxes(canvas, ranked) {
+    const ctx = canvas.getContext('2d');
+    ctx.save();
+    ranked.forEach((b, i) => {
+        const isFirst = i === 0;
+        const { x, y, w, h } = b.box;
+        ctx.shadowColor = 'rgba(0,0,0,0.7)';
+        ctx.shadowBlur = 5;
+        ctx.strokeStyle = isFirst ? '#FFD700' : '#ffffff';
+        ctx.lineWidth = isFirst ? 4 : 2.5;
+        ctx.strokeRect(x, y, w, h);
 
-    let isBanana=true, modelInfo=isIOS?'Colour analysis · iOS':'Colour analysis';
-
-    if (classifier) {
-        try {
-            el('loading-text').textContent='Running vision model…';
-            const results=await classifier(dataUrl,{topk:5});
-            el('progress-fill').style.width='90%';
-            const hit=results.find(r=>r.label.toLowerCase().includes('banana'));
-            if (hit) {
-                modelInfo=`MobileNet-v2: banana ${(hit.score*100).toFixed(0)}% confident`;
-            } else {
-                isBanana=false;
-                modelInfo=`MobileNet-v2: top result was "${results[0].label}"`;
-            }
-        } catch { modelInfo='Colour analysis (model error)'; }
-    }
-
-    el('progress-fill').style.width='100%';
-    await delay(200); hide('loading');
-
-    if (!isBanana) return showResult('❓',"That Doesn't Look Like a Banana",
-        "Point the camera at a banana, make sure it's well-lit and inside the box.",50,modelInfo);
-    if (colorScore===null) return showResult('❓','Try Again',
-        'Move the banana inside the frame and make sure it\'s well-lit.',50,modelInfo);
-
-    const stage=stageFromScore(colorScore);
-    showResult(stage.emoji, stage.title, stage.desc, stage.pos, modelInfo);
+        const label = `${i+1}. ${b.stage.emoji} ${b.stage.title.split(' —')[0].replace(/!/g,'')}`;
+        const fontSize = Math.max(13, Math.min(20, w / 7));
+        ctx.font = `bold ${fontSize}px -apple-system, sans-serif`;
+        ctx.shadowBlur = 0;
+        const tw = ctx.measureText(label).width + 12;
+        const lh = fontSize + 8;
+        const lx = Math.max(0, x);
+        const ly = y > lh + 4 ? y - 4 : y + h + lh;
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.fillRect(lx, ly - fontSize - 2, tw, lh);
+        ctx.fillStyle = isFirst ? '#FFD700' : '#ffffff';
+        ctx.fillText(label, lx + 6, ly + 2);
+    });
+    ctx.restore();
 }
 
-async function analyze(dataUrl) {
-    if (useVLM && vlmPipe) {
-        show('loading'); hide('result');
-        el('loading-text').textContent='Thinking with SmolVLM…';
-        el('progress-fill').style.width='35%';
-        try {
-            const text=await analyzeWithVLM(dataUrl);
-            el('progress-fill').style.width='100%'; await delay(200); hide('loading');
-            const {stage,explanation}=parseVLMResponse(text);
-            if (!stage) return showResult('❓',"That Doesn't Look Like a Banana",'Point the camera at a banana and try again.',50,'SmolVLM-256M (WebGPU)');
-            showResult(stage.emoji, stage.title, explanation, stage.pos, 'SmolVLM-256M (WebGPU)');
-        } catch(err) {
-            console.warn('VLM inference failed:',err); hide('loading');
-            await analyzeFallback(dataUrl);
-        }
+function showShelfResult(ranked) {
+    const div = el('shelf-result');
+    if (!div) return;
+    if (ranked.length === 0) { hide('shelf-result'); return; }
+    div.innerHTML = ranked.map((b, i) =>
+        `<div class="shelf-item${i===0?' shelf-best':''}">
+            <span class="shelf-rank">${i+1}</span>
+            <span class="shelf-emoji" aria-hidden="true">${b.stage.emoji}</span>
+            <span class="shelf-label">${b.stage.title}</span>
+        </div>`
+    ).join('');
+    show('shelf-result');
+}
+
+// ---- Main analyze ----
+
+async function analyze(canvas) {
+    hide('result', 'shelf-result');
+    show('loading');
+    el('loading-text').textContent = 'Detecting bananas…';
+    el('progress-fill').style.width = '20%';
+
+    let bananas = null;
+    try {
+        bananas = await runDetection(canvas);
+    } catch (err) {
+        console.warn('Detection error:', err);
+    }
+    el('progress-fill').style.width = '60%';
+
+    if (bananas && bananas.length > 0) {
+        el('loading-text').textContent = `Found ${bananas.length} banana${bananas.length>1?'s':''}…`;
+
+        const analysed = bananas.map(b => {
+            const crop = cropCanvas(canvas, b.box);
+            const score = analyzeRipeness(crop.getContext('2d'), crop.width, crop.height, 0.08);
+            const stage = score !== null ? stageFromScore(score) : STAGES[2];
+            return { ...b, stage };
+        });
+
+        // Sort: closest to "perfect" (pos 50) first
+        analysed.sort((a, b) => Math.abs(a.stage.pos - 50) - Math.abs(b.stage.pos - 50));
+
+        const annotated = document.createElement('canvas');
+        annotated.width = canvas.width; annotated.height = canvas.height;
+        annotated.getContext('2d').drawImage(canvas, 0, 0);
+        drawBananaBoxes(annotated, analysed);
+
+        el('progress-fill').style.width = '100%';
+        await delay(200);
+        hide('loading');
+
+        el('preview-img').src = annotated.toDataURL('image/jpeg', 0.92);
+        showShelfResult(analysed);
+
+        const best = analysed[0];
+        const modelLabel = isIOS ? 'COCO-SSD · iOS' : 'YOLOS-tiny';
+        showResult(best.stage.emoji, best.stage.title, best.stage.desc, best.stage.pos,
+            `${modelLabel} · ${analysed.length} banana${analysed.length>1?'s':''} detected`);
+
     } else {
-        await analyzeFallback(dataUrl);
+        // No bananas detected (or no detector) — fall back to whole-frame colour analysis
+        const colorScore = analyzeRipeness(canvas.getContext('2d'), canvas.width, canvas.height, 0.2);
+        el('progress-fill').style.width = '100%';
+        await delay(200);
+        hide('loading');
+
+        if (bananas !== null && bananas.length === 0) {
+            return showResult('❓', 'No Banana Found',
+                "Point the camera directly at a banana and make sure it's well-lit.",
+                50, isIOS ? 'COCO-SSD · no banana detected' : 'YOLOS-tiny · no banana detected');
+        }
+        if (colorScore === null) {
+            return showResult('❓', 'Try Again',
+                "Make sure the banana is well-lit and fills the frame.", 50, 'Colour analysis');
+        }
+        const stage = stageFromScore(colorScore);
+        showResult(stage.emoji, stage.title, stage.desc, stage.pos, 'Colour analysis');
     }
 }
 
-function showResult(emoji,title,desc,pos,info) {
-    el('result-emoji').textContent=emoji;
-    el('result-title').textContent=title;
-    el('result-desc').textContent=desc;
-    el('ripeness-indicator').style.left=`${pos}%`;
-    el('model-info').textContent=info;
+function showResult(emoji, title, desc, pos, info) {
+    el('result-emoji').textContent = emoji;
+    el('result-title').textContent = title;
+    el('result-desc').textContent = desc;
+    el('ripeness-indicator').style.left = `${pos}%`;
+    el('model-info').textContent = info;
     show('result');
-    el('result').scrollIntoView({behavior:'smooth',block:'nearest'});
+    el('result').scrollIntoView({ behavior:'smooth', block:'nearest' });
 }
 
 async function handleCapture() {
-    const dataUrl=captureFrame();
-    el('preview-img').src=dataUrl;
-    hide('camera-view','btn-capture');
-    show('preview-view','btn-retake');
+    const canvas = captureFrame();
+    el('preview-img').src = canvas.toDataURL('image/jpeg', 0.92);
+    hide('camera-view', 'btn-capture');
+    show('preview-view', 'btn-retake');
     stopCamera();
-    await analyze(dataUrl);
+    await analyze(canvas);
 }
 
 function handleRetake() {
-    hide('preview-view','result','btn-retake','loading');
+    hide('preview-view', 'result', 'btn-retake', 'loading', 'shelf-result');
     startCamera();
 }
 
@@ -315,35 +365,33 @@ function drawSample(stageIdx) {
     ctx.beginPath(); ctx.moveTo(98,12); ctx.quadraticCurveTo(112,0,108,-12);
     ctx.strokeStyle=tip; ctx.lineWidth=5; ctx.lineCap='round'; ctx.stroke();
     ctx.restore();
-    return c.toDataURL('image/jpeg',0.92);
+    return c;
 }
 
 function initSamples() {
     const grid=el('samples-grid'); if (!grid) return;
-    STAGES.forEach((stage,i)=>{
+    STAGES.forEach((stage, i) => {
         const btn=document.createElement('button');
         btn.className='sample-thumb'; btn.title=stage.title;
         btn.setAttribute('aria-label', stage.title);
-        const img=document.createElement('img'); img.src=drawSample(i); img.alt=stage.title;
-        const lbl=document.createElement('span'); lbl.textContent=stage.emoji+' '+stage.title.split(' —')[0].replace('!','');
+        const sampleCanvas = drawSample(i);
+        const img=document.createElement('img');
+        img.src = sampleCanvas.toDataURL('image/jpeg', 0.92);
+        img.alt=stage.title;
+        const lbl=document.createElement('span');
+        lbl.textContent=stage.emoji+' '+stage.title.split(' —')[0].replace('!','');
         btn.appendChild(img); btn.appendChild(lbl);
-        btn.addEventListener('click',()=>loadSample(img.src));
+        btn.addEventListener('click', () => loadSample(sampleCanvas));
         grid.appendChild(btn);
     });
 }
 
-async function loadSample(dataUrl) {
-    const img=new Image();
-    img.onload=async ()=>{
-        const canvas=el('canvas'); canvas.width=img.width; canvas.height=img.height;
-        canvas.getContext('2d').drawImage(img,0,0);
-        el('preview-img').src=dataUrl;
-        hide('camera-view','btn-capture','start-screen','result');
-        show('preview-view','btn-retake');
-        stopCamera();
-        await analyze(dataUrl);
-    };
-    img.src=dataUrl;
+async function loadSample(sampleCanvas) {
+    el('preview-img').src = sampleCanvas.toDataURL('image/jpeg', 0.92);
+    hide('camera-view', 'btn-capture', 'start-screen', 'result', 'shelf-result');
+    show('preview-view', 'btn-retake');
+    stopCamera();
+    await analyze(sampleCanvas);
 }
 
 // ---- Boot ----
@@ -356,4 +404,4 @@ initSamples();
 loadModel();
 
 if ('serviceWorker' in navigator)
-    navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW:',e));
+    navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW:', e));

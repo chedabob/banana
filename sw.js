@@ -1,4 +1,4 @@
-const CACHE = 'banana-detector-v3';
+const CACHE = 'banana-detector-v4';
 const PRECACHE = ['./', './index.html', './style.css', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
