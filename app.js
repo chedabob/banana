@@ -85,8 +85,9 @@ async function classifyRipeness(cropCanvas) {
     if (!classifierSession || !classifierClasses) return null;
     try {
         const tensor = preprocessForClassifier(cropCanvas);
-        const { output0 } = await classifierSession.run({ images: tensor });
-        const logits = output0.data;
+        const outputs = await classifierSession.run({ images: tensor });
+        const outputTensor = outputs.output0 ?? outputs[Object.keys(outputs)[0]];
+        const logits = outputTensor.data;
         const max = Math.max(...logits);
         const exps = Array.from(logits).map(x => Math.exp(x - max));
         const sum  = exps.reduce((a, b) => a + b, 0);
@@ -129,8 +130,18 @@ async function loadYolos() {
 }
 
 async function loadModels() {
-    if (classifierSession || modelLoading) return;
+    if (modelLoading) return;
     modelLoading = true;
+
+    // Detector starts immediately regardless of classifier outcome
+    const detectorPromise = (isIOS ? loadCocoSsd() : loadYolos())
+        .then(() => setModeIndicator(
+            classifierSession
+                ? 'Banana-v1 · ' + (isIOS ? 'COCO-SSD' : 'YOLOS-tiny') + ' · 99.1%'
+                : (isIOS ? 'COCO-SSD' : 'YOLOS-tiny') + ' · colour analysis'
+        ))
+        .catch(err => console.warn('Detector unavailable:', err));
+
     try {
         setSplash('Loading banana brain… (~6 MB, cached after this)', 5);
         await loadClassifier();
@@ -138,10 +149,6 @@ async function loadModels() {
         setSplash('✓ Ready', 100);
         await delay(300);
         hideSplash();
-        // Detector loads in background — adds bounding boxes once ready
-        (isIOS ? loadCocoSsd() : loadYolos())
-            .then(() => setModeIndicator('Banana-v1 · ' + (isIOS ? 'COCO-SSD' : 'YOLOS-tiny') + ' · 99.1%'))
-            .catch(err => console.warn('Detector unavailable:', err));
     } catch (err) {
         console.error('Classifier load failed:', err);
         const msg = err?.message ?? String(err);
