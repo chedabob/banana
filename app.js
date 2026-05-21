@@ -55,7 +55,27 @@ function setModeIndicator(text) {
 async function loadClassifier() {
     const meta = await fetch('./models/metadata.json').then(r => r.json());
     classifierClasses = meta.classes;
-    classifierSession = await ort.InferenceSession.create(`./models/${meta.onnx_file}`, {
+
+    // Stream the model file so we can show download progress
+    const url = `./models/${meta.onnx_file}`;
+    const res = await fetch(url);
+    const total = parseInt(res.headers.get('content-length') || '0');
+    const reader = res.body.getReader();
+    const chunks = [];
+    let received = 0;
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        if (total) setSplash(`Downloading banana brain… ${Math.round(received / total * 100)}%`, 5 + (received / total) * 75);
+    }
+    const buffer = new Uint8Array(received);
+    let pos = 0;
+    for (const chunk of chunks) { buffer.set(chunk, pos); pos += chunk.length; }
+
+    setSplash('Initialising model…', 82);
+    classifierSession = await ort.InferenceSession.create(buffer.buffer, {
         executionProviders: ['wasm']
     });
 }
