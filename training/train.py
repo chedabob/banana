@@ -184,22 +184,27 @@ def export_onnx(weights: Path, class_names: list, top1: float, top5: float):
 
 
 if __name__ == "__main__":
-    # 1. Download dataset (folder format for classification)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--weights", type=Path, default=None,
+                        help="Skip training and export these existing weights directly")
+    args = parser.parse_args()
+
+    # Ensure dataset is present (needed for class names and validation)
     if not (DATASET_DIR / "train").exists():
         download_dataset()
     else:
         print(f"Dataset already present at {DATASET_DIR}, skipping download.")
 
-    # 2. Remap class directory names to our STAGES ids
     class_names = remap_class_dirs(DATASET_DIR)
 
-    # 3. Train
-    best_weights = train(DATASET_DIR)
+    if args.weights:
+        print(f"\nSkipping training — using existing weights: {args.weights}")
+        best_weights = args.weights
+    else:
+        best_weights = train(DATASET_DIR)
 
-    # 4. Validate on test set
     top1, top5 = validate(best_weights, DATASET_DIR)
-
-    # 5. Export ONNX
     dest, size_mb = export_onnx(best_weights, class_names, top1, top5)
 
     print(f"\n✓  Done!  {dest}  ({size_mb:.2f} MB)")
