@@ -1,20 +1,27 @@
 import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js';
+import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/esm/ort.min.js';
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
+// Serve WASM from CDN; disable threading (avoids COOP/COEP header requirement)
+ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/';
+ort.env.wasm.numThreads = 1;
+
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
 const STAGES = [
-    { id:'unripe',   emoji:'🟢', title:'Unripe — Not Yet',     desc:'This banana needs more time. Leave it at room temperature for 3–5 days until it turns yellow.',            pos: 7  },
-    { id:'nearly',   emoji:'🟡', title:'Almost Ready',           desc:"Getting close! Give it 1–2 more days and it'll be perfect.",                                           pos: 28 },
-    { id:'perfect',  emoji:'⭐',  title:'Perfect to Eat!',         desc:'This is the sweet spot — bright yellow, firm, and at peak sweetness. Eat it now!',                  pos: 50 },
-    { id:'ripe',     emoji:'✅',  title:'Ripe & Very Sweet',        desc:'The brown spots mean extra sugar. Great for eating fresh, in smoothies, or frozen.',               pos: 72 },
-    { id:'overripe', emoji:'🍞', title:'Overripe — Bake It!',  desc:"Too soft to eat fresh, but perfect for banana bread, muffins, or pancakes. Don't throw it out!", pos: 92 }
+    { id:'unripe',   emoji:'🟢', title:'Unripe — Not Yet',       desc:'This banana needs more time. Leave it at room temperature for 3–5 days until it turns yellow.',            pos: 7  },
+    { id:'nearly',   emoji:'🟡', title:'Almost Ready',             desc:"Getting close! Give it 1–2 more days and it'll be perfect.",                                               pos: 28 },
+    { id:'perfect',  emoji:'⭐',  title:'Perfect to Eat!',           desc:'This is the sweet spot — bright yellow, firm, and at peak sweetness. Eat it now!',                      pos: 50 },
+    { id:'ripe',     emoji:'✅',  title:'Ripe & Very Sweet',          desc:'The brown spots mean extra sugar. Great for eating fresh, in smoothies, or frozen.',                   pos: 72 },
+    { id:'overripe', emoji:'🍞', title:'Overripe — Bake It!',    desc:"Too soft to eat fresh, but perfect for banana bread, muffins, or pancakes. Don't throw it out!",       pos: 92 }
 ];
 
-let detector  = null;   // YOLOS-tiny (non-iOS, via Transformers.js)
-let cocoModel = null;   // COCO-SSD (iOS, via TF.js)
+let classifierSession = null;
+let classifierClasses = null;
+let detector     = null;
+let cocoModel    = null;
 let modelLoading = false;
 let cameraStream = null;
 
@@ -43,7 +50,51 @@ function setModeIndicator(text) {
     if (ind) { ind.textContent = text; ind.classList.remove('hidden'); }
 }
 
-// ---- Model loading ----
+// ---- Classifier ----
+
+async function loadClassifier() {
+    const meta = await fetch('./models/metadata.json').then(r => r.json());
+    classifierClasses = meta.classes;
+    classifierSession = await ort.InferenceSession.create(`./models/${meta.onnx_file}`, {
+        executionProviders: ['wasm']
+    });
+}
+
+function preprocessForClassifier(canvas, size = 224) {
+    const c = document.createElement('canvas');
+    c.width = size; c.height = size;
+    c.getContext('2d').drawImage(canvas, 0, 0, size, size);
+    const { data } = c.getContext('2d').getImageData(0, 0, size, size);
+    const n = size * size;
+    const t = new Float32Array(3 * n);
+    for (let i = 0; i < n; i++) {
+        t[i]         = data[i * 4]     / 255;
+        t[n + i]     = data[i * 4 + 1] / 255;
+        t[2 * n + i] = data[i * 4 + 2] / 255;
+    }
+    return new ort.Tensor('float32', t, [1, 3, size, size]);
+}
+
+async function classifyRipeness(cropCanvas) {
+    if (!classifierSession || !classifierClasses) return null;
+    try {
+        const tensor = preprocessForClassifier(cropCanvas);
+        const { output0 } = await classifierSession.run({ images: tensor });
+        const logits = output0.data;
+        const max = Math.max(...logits);
+        const exps = Array.from(logits).map(x => Math.exp(x - max));
+        const sum  = exps.reduce((a, b) => a + b, 0);
+        const probs = exps.map(x => x / sum);
+        const idx = probs.indexOf(Math.max(...probs));
+        const stage = STAGES.find(s => s.id === classifierClasses[idx]) ?? STAGES[2];
+        return { stage, confidence: probs[idx] };
+    } catch (err) {
+        console.warn('Classifier error:', err);
+        return null;
+    }
+}
+
+// ---- Detector (bounding boxes) ----
 
 function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -55,50 +106,44 @@ function loadScript(src) {
 }
 
 async function loadCocoSsd() {
-    setSplash('⏳ Loading banana detector…', 5);
     await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
-    setSplash('⏳ Loading banana detector… 40%', 40);
     await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
-    setSplash('⏳ Initialising…', 70);
     await window.tf.setBackend('webgl');
     cocoModel = await window.cocoSsd.load({ base: 'lite_mobilenet_v2' });
-    setModeIndicator('COCO-SSD · colour analysis');
-    setSplash('✓ Ready', 100);
-    await delay(400);
 }
 
 async function loadYolos() {
-    setSplash('⏳ Loading banana detector (~7 MB, cached after this)…', 3);
     detector = await pipeline('object-detection', 'Xenova/yolos-tiny', {
         device: 'wasm',
         progress_callback: ({ status, progress }) => {
-            if (status === 'progress' && progress != null) {
-                setSplash(`⏳ Loading detector: ${Math.round(progress)}%`, 3 + progress * 0.9);
-            }
+            if (status === 'progress' && progress != null)
+                setModeIndicator(`Banana-v1 · loading detector ${Math.round(progress)}%…`);
         }
     });
-    setModeIndicator('YOLOS-tiny · colour analysis');
-    setSplash('✓ Ready', 100);
-    await delay(400);
 }
 
-async function loadModel() {
-    if (detector || cocoModel || modelLoading) return;
+async function loadModels() {
+    if (classifierSession || modelLoading) return;
     modelLoading = true;
     try {
-        if (isIOS) {
-            await loadCocoSsd();
-        } else {
-            await loadYolos();
-        }
+        setSplash('Loading banana brain… (~6 MB, cached after this)', 5);
+        await loadClassifier();
+        setModeIndicator('Banana-v1 · 99.1% accuracy');
+        setSplash('✓ Ready', 100);
+        await delay(300);
+        hideSplash();
+        // Detector loads in background — adds bounding boxes once ready
+        (isIOS ? loadCocoSsd() : loadYolos())
+            .then(() => setModeIndicator('Banana-v1 · ' + (isIOS ? 'COCO-SSD' : 'YOLOS-tiny') + ' · 99.1%'))
+            .catch(err => console.warn('Detector unavailable:', err));
     } catch (err) {
-        console.error('Detector load failed:', err);
+        console.error('Classifier load failed:', err);
         setModeIndicator('Colour analysis only');
-        setSplash(`! Detector failed — colour analysis only\n(${(err?.message ?? String(err)).slice(0,80)})`, 100);
+        setSplash('⚠ Model failed — colour analysis only', 100);
         await delay(2500);
+        hideSplash();
     } finally {
         modelLoading = false;
-        hideSplash();
     }
 }
 
@@ -135,7 +180,6 @@ function stopCamera() {
 
 async function runDetection(canvas) {
     if (cocoModel) {
-        // TF.js COCO-SSD: bbox = [x, y, w, h] in pixels
         const preds = await cocoModel.detect(canvas);
         return preds
             .filter(p => p.class === 'banana' && p.score > 0.45)
@@ -146,7 +190,6 @@ async function runDetection(canvas) {
             }));
     }
     if (detector) {
-        // Transformers.js YOLOS: box = {xmin, ymin, xmax, ymax} in pixels
         const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
         const preds = await detector(dataUrl, { threshold: 0.45 });
         return preds
@@ -157,7 +200,7 @@ async function runDetection(canvas) {
                        w: Math.round(p.box.xmax - p.box.xmin), h: Math.round(p.box.ymax - p.box.ymin) }
             }));
     }
-    return null; // no detector loaded
+    return null;
 }
 
 function cropCanvas(src, box) {
@@ -167,7 +210,7 @@ function cropCanvas(src, box) {
     return c;
 }
 
-// ---- Colour analysis ----
+// ---- Colour analysis (fallback when classifier unavailable) ----
 
 function rgbToHsl(r,g,b) {
     r/=255; g/=255; b/=255;
@@ -206,6 +249,11 @@ function stageFromScore(s) {
     return STAGES[4];
 }
 
+function hslFallback(canvas, pad) {
+    const score = analyzeRipeness(canvas.getContext('2d'), canvas.width, canvas.height, pad);
+    return score !== null ? stageFromScore(score) : null;
+}
+
 // ---- Annotation ----
 
 function drawBananaBoxes(canvas, ranked) {
@@ -219,7 +267,6 @@ function drawBananaBoxes(canvas, ranked) {
         ctx.strokeStyle = isFirst ? '#FFD700' : '#ffffff';
         ctx.lineWidth = isFirst ? 4 : 2.5;
         ctx.strokeRect(x, y, w, h);
-
         const label = `${i+1}. ${b.stage.emoji} ${b.stage.title.split(' —')[0].replace(/!/g,'')}`;
         const fontSize = Math.max(13, Math.min(20, w / 7));
         ctx.font = `bold ${fontSize}px -apple-system, sans-serif`;
@@ -259,24 +306,20 @@ async function analyze(canvas) {
     el('progress-fill').style.width = '20%';
 
     let bananas = null;
-    try {
-        bananas = await runDetection(canvas);
-    } catch (err) {
-        console.warn('Detection error:', err);
-    }
-    el('progress-fill').style.width = '60%';
+    try { bananas = await runDetection(canvas); }
+    catch (err) { console.warn('Detection error:', err); }
+    el('progress-fill').style.width = '50%';
 
     if (bananas && bananas.length > 0) {
-        el('loading-text').textContent = `Found ${bananas.length} banana${bananas.length>1?'s':''}…`;
+        el('loading-text').textContent = `Classifying ${bananas.length} banana${bananas.length>1?'s':''}…`;
 
-        const analysed = bananas.map(b => {
+        const analysed = await Promise.all(bananas.map(async b => {
             const crop = cropCanvas(canvas, b.box);
-            const score = analyzeRipeness(crop.getContext('2d'), crop.width, crop.height, 0.08);
-            const stage = score !== null ? stageFromScore(score) : STAGES[2];
+            const cls  = await classifyRipeness(crop);
+            const stage = cls?.stage ?? hslFallback(crop, 0.08) ?? STAGES[2];
             return { ...b, stage };
-        });
+        }));
 
-        // Sort: closest to "perfect" (pos 50) first
         analysed.sort((a, b) => Math.abs(a.stage.pos - 50) - Math.abs(b.stage.pos - 50));
 
         const annotated = document.createElement('canvas');
@@ -292,28 +335,35 @@ async function analyze(canvas) {
         showShelfResult(analysed);
 
         const best = analysed[0];
-        const modelLabel = isIOS ? 'COCO-SSD · iOS' : 'YOLOS-tiny';
+        const detLabel = isIOS ? 'COCO-SSD' : 'YOLOS-tiny';
         showResult(best.stage.emoji, best.stage.title, best.stage.desc, best.stage.pos,
-            `${modelLabel} · ${analysed.length} banana${analysed.length>1?'s':''} detected`);
+            `Banana-v1 · ${detLabel} · ${analysed.length} banana${analysed.length>1?'s':''}`);
 
     } else {
-        // No bananas detected (or no detector) — fall back to whole-frame colour analysis
-        const colorScore = analyzeRipeness(canvas.getContext('2d'), canvas.width, canvas.height, 0.2);
+        el('loading-text').textContent = 'Analysing…';
+
+        if (bananas !== null && bananas.length === 0) {
+            el('progress-fill').style.width = '100%';
+            await delay(200);
+            hide('loading');
+            return showResult('🙅🍌', 'Not Banana',
+                "That's definitely not a banana. Point the camera at a banana and make sure it's well-lit.",
+                50, (isIOS ? 'COCO-SSD' : 'YOLOS-tiny') + ' · no banana detected');
+        }
+
+        // No detector loaded — classify whole frame
+        const cls   = await classifyRipeness(canvas);
+        const stage = cls?.stage ?? hslFallback(canvas, 0.2);
         el('progress-fill').style.width = '100%';
         await delay(200);
         hide('loading');
 
-        if (bananas !== null && bananas.length === 0) {
-            return showResult('🙅🍌', 'Not Banana',
-                "That's definitely not a banana. Point the camera at a banana and make sure it's well-lit.",
-                50, isIOS ? 'COCO-SSD · no banana detected' : 'YOLOS-tiny · no banana detected');
-        }
-        if (colorScore === null) {
+        if (!stage) {
             return showResult('❓', 'Try Again',
-                "Make sure the banana is well-lit and fills the frame.", 50, 'Colour analysis');
+                'Make sure the banana is well-lit and fills the frame.', 50, 'Analysis failed');
         }
-        const stage = stageFromScore(colorScore);
-        showResult(stage.emoji, stage.title, stage.desc, stage.pos, 'Colour analysis');
+        showResult(stage.emoji, stage.title, stage.desc, stage.pos,
+            cls ? 'Banana-v1 · whole frame' : 'Colour analysis');
     }
 }
 
@@ -401,7 +451,7 @@ el('btn-capture').addEventListener('click', handleCapture);
 el('btn-retake').addEventListener('click', handleRetake);
 
 initSamples();
-loadModel();
+loadModels();
 
 if ('serviceWorker' in navigator)
     navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW:', e));

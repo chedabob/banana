@@ -1,5 +1,6 @@
-const CACHE = 'banana-detector-v4';
-const PRECACHE = ['./', './index.html', './style.css', './app.js', './manifest.json', './icon.svg'];
+const CACHE = 'banana-detector-v5';
+const PRECACHE = ['./', './index.html', './style.css', './app.js', './manifest.json', './icon.svg',
+                  './models/banana_yolo11s-cls.onnx', './models/metadata.json'];
 
 self.addEventListener('install', e => {
     e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)));
