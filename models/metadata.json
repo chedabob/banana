@@ -1,0 +1,17 @@
+{
+  "model": "yolo11s-cls",
+  "type": "classification",
+  "onnx_file": "banana_yolo11s-cls.onnx",
+  "classes": [
+    "freshripe",
+    "freshunripe",
+    "perfect",
+    "ripe",
+    "rotten",
+    "unripe"
+  ],
+  "imgsz": 224,
+  "top1": 0.9911,
+  "top5": 1.0,
+  "trained_on": "Roboflow roboflow-universe-projects/banana-ripeness-classification v1"
+}
