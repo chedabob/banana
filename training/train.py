@@ -175,13 +175,20 @@ def validate(weights: Path, dataset_root: Path):
 
 def export_onnx(weights: Path, class_names: list, top1: float, top5: float):
     from ultralytics import YOLO
+    from onnxruntime.quantization import quantize_dynamic, QuantType
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    dest = OUTPUT_DIR / ONNX_NAME
 
-    print(f"\nExporting ONNX (INT8 quantised) → {dest}…")
+    # Step 1: export FP32 ONNX from Ultralytics
+    print(f"\nExporting ONNX (FP32)…")
     model = YOLO(str(weights))
-    export_path = model.export(format="onnx", imgsz=IMGSZ, int8=True, simplify=True)
-    shutil.copy(export_path, dest)
+    fp32_path = Path(model.export(format="onnx", imgsz=IMGSZ, simplify=True))
+
+    # Step 2: dynamic INT8 quantisation via onnxruntime
+    dest = OUTPUT_DIR / ONNX_NAME
+    print(f"Quantising to INT8 → {dest}…")
+    quantize_dynamic(str(fp32_path), str(dest), weight_type=QuantType.QInt8)
+    fp32_path.unlink()  # remove intermediate FP32
+
     size_mb = dest.stat().st_size / 1e6
     print(f"Saved {dest}  ({size_mb:.2f} MB)")
 
