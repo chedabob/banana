@@ -74,13 +74,16 @@ def download_dataset():
 def remap_class_dirs(dataset_root: Path) -> list[str]:
     """
     Renames class subdirectories (train/valid/test/<class>) to match our STAGES ids.
-    Returns the final sorted class name list.
+    Uses a two-pass rename to avoid conflicts when a target name is also a source name
+    (e.g. overripe→ripe conflicts with ripe→perfect if done in alphabetical order).
     """
     classes = set()
     for split in ("train", "valid", "test"):
         split_dir = dataset_root / split
         if not split_dir.exists():
             continue
+
+        renames = []
         for cls_dir in sorted(split_dir.iterdir()):
             if not cls_dir.is_dir():
                 continue
@@ -88,10 +91,21 @@ def remap_class_dirs(dataset_root: Path) -> list[str]:
             mapped = CLASS_MAP.get(original.lower().replace(" ", "-"),
                                    CLASS_MAP.get(original.lower().replace(" ", "_"),
                                                  original.lower()))
-            if mapped != original:
-                cls_dir.rename(split_dir / mapped)
-                print(f"  {split}/{original} → {split}/{mapped}")
             classes.add(mapped)
+            if mapped != original:
+                renames.append((cls_dir, split_dir / mapped))
+                print(f"  {split}/{original} → {split}/{mapped}")
+
+        # Pass 1: rename to unique temp names to avoid chain conflicts
+        temp_map = []
+        for src, dst in renames:
+            tmp = src.parent / f"__tmp_{src.name}__"
+            src.rename(tmp)
+            temp_map.append((tmp, dst))
+
+        # Pass 2: rename from temp to final names
+        for tmp, dst in temp_map:
+            tmp.rename(dst)
 
     class_names = sorted(classes)
     print(f"Classes: {class_names}")
