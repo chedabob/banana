@@ -1,4 +1,4 @@
-const CACHE = 'banana-detector-v5';
+const CACHE = 'banana-detector-v6';
 const PRECACHE = ['./', './index.html', './style.css', './app.js', './manifest.json', './icon.svg',
                   './models/banana_yolo11s-cls.onnx', './models/metadata.json'];
 
