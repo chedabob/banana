@@ -1,9 +1,16 @@
 const CACHE = 'banana-detector-v6';
-const PRECACHE = ['./', './index.html', './style.css', './app.js', './manifest.json', './icon.svg',
-                  './models/banana_yolo11s-cls.onnx', './models/metadata.json'];
+const PRECACHE = ['./', './index.html', './style.css', './app.js', './manifest.json', './icon.svg'];
+
+const PRECACHE_MODELS = ['./models/banana_yolo11s-cls.onnx', './models/metadata.json'];
 
 self.addEventListener('install', e => {
-    e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)));
+    e.waitUntil(
+        caches.open(CACHE).then(async c => {
+            await c.addAll(PRECACHE);
+            // Model files cached separately — a fetch failure won't abort SW install
+            await Promise.allSettled(PRECACHE_MODELS.map(url => c.add(url)));
+        })
+    );
     self.skipWaiting();
 });
 
