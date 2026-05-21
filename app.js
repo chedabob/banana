@@ -304,8 +304,8 @@ async function analyze(canvas) {
         hide('loading');
 
         if (bananas !== null && bananas.length === 0) {
-            return showResult('❓', 'No Banana Found',
-                "Point the camera directly at a banana and make sure it's well-lit.",
+            return showResult('🙅🍌', 'Not Banana',
+                "That's definitely not a banana. Point the camera at a banana and make sure it's well-lit.",
                 50, isIOS ? 'COCO-SSD · no banana detected' : 'YOLOS-tiny · no banana detected');
         }
         if (colorScore === null) {

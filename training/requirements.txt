@@ -1,0 +1,5 @@
+ultralytics>=8.2.0
+roboflow>=1.1.0
+onnx>=1.16.0
+onnxruntime>=1.18.0
+onnxslim>=0.1.31
