@@ -1,0 +1,15 @@
+[tools]
+python = "3.11"
+
+[env]
+_.python.venv = { path = "training/.venv", create = true }
+
+[tasks.install]
+description = "Install Python training dependencies"
+dir = "training"
+run = "pip install -r requirements.txt"
+
+[tasks.train]
+description = "Fine-tune YOLOv11n on the banana ripeness dataset (set ROBOFLOW_API_KEY first)"
+dir = "training"
+run = "python train.py"
