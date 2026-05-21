@@ -116,7 +116,7 @@ def train(dataset_root: Path):
     from ultralytics import YOLO
     print(f"\nFine-tuning {BASE_MODEL} for {EPOCHS} epochs on {DEVICE}…")
     model = YOLO(BASE_MODEL)
-    model.train(
+    results = model.train(
         data=str(dataset_root),
         epochs=EPOCHS,
         imgsz=IMGSZ,
@@ -132,7 +132,10 @@ def train(dataset_root: Path):
         flipud=0.1,
         fliplr=0.5,
     )
-    best_weights = Path("runs/banana/weights/best.pt")
+    save_dir = Path(results.save_dir)
+    best_weights = save_dir / "weights" / "best.pt"
+    if not best_weights.exists():
+        best_weights = save_dir / "weights" / "last.pt"
     print(f"\nTraining complete. Best weights: {best_weights}")
     return best_weights
 
