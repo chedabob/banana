@@ -204,29 +204,65 @@ function nms(detections, iouThreshold = 0.45) {
 
 // ---- Detection ----
 
-async function runDetection(canvas) {
+const TILE_SIZE = 640;
+const TILE_STRIDE = 320; // 50% overlap
+
+function tileStarts(dimension) {
+    const starts = [];
+    for (let s = 0; s + TILE_SIZE <= dimension; s += TILE_STRIDE) starts.push(s);
+    if (!starts.length) starts.push(0);
+    else if (starts[starts.length - 1] + TILE_SIZE < dimension) starts.push(dimension - TILE_SIZE);
+    return [...new Set(starts)];
+}
+
+async function detectOnCanvas(canvas) {
     if (cocoModel) {
         const preds = await cocoModel.detect(canvas);
-        return nms(preds
-            .filter(p => p.class === 'banana' && p.score > 0.45)
+        return preds
+            .filter(p => p.class === 'banana' && p.score > 0.4)
             .map(p => ({
                 label: p.class, score: p.score,
                 box: { x: Math.round(p.bbox[0]), y: Math.round(p.bbox[1]),
                        w: Math.round(p.bbox[2]), h: Math.round(p.bbox[3]) }
-            })));
+            }));
     }
     if (detector) {
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        const preds = await detector(dataUrl, { threshold: 0.45 });
-        return nms(preds
+        const preds = await detector(canvas.toDataURL('image/jpeg', 0.85), { threshold: 0.4 });
+        return preds
             .filter(p => p.label === 'banana')
             .map(p => ({
                 label: p.label, score: p.score,
                 box: { x: Math.round(p.box.xmin), y: Math.round(p.box.ymin),
                        w: Math.round(p.box.xmax - p.box.xmin), h: Math.round(p.box.ymax - p.box.ymin) }
-            })));
+            }));
     }
     return null;
+}
+
+async function runDetection(canvas, onProgress) {
+    const W = canvas.width, H = canvas.height;
+    if (W <= TILE_SIZE && H <= TILE_SIZE) {
+        const dets = await detectOnCanvas(canvas);
+        return dets ? nms(dets, 0.35) : null;
+    }
+
+    const xs = tileStarts(W), ys = tileStarts(H);
+    const total = xs.length * ys.length;
+    let done = 0, allDets = [];
+
+    for (const ty of ys) {
+        for (const tx of xs) {
+            const tile = document.createElement('canvas');
+            tile.width = TILE_SIZE; tile.height = TILE_SIZE;
+            tile.getContext('2d').drawImage(canvas, tx, ty, TILE_SIZE, TILE_SIZE, 0, 0, TILE_SIZE, TILE_SIZE);
+            const dets = await detectOnCanvas(tile);
+            if (dets === null) return null;
+            for (const d of dets)
+                allDets.push({ ...d, box: { x: d.box.x + tx, y: d.box.y + ty, w: d.box.w, h: d.box.h } });
+            onProgress?.(++done, total);
+        }
+    }
+    return nms(allDets, 0.35);
 }
 
 function cropCanvas(src, box) {
@@ -328,11 +364,16 @@ function showShelfResult(ranked) {
 async function analyze(canvas) {
     hide('result', 'shelf-result');
     show('loading');
-    el('loading-text').textContent = 'Detecting bananas…';
-    el('progress-fill').style.width = '20%';
+    el('loading-text').textContent = 'Scanning for bananas…';
+    el('progress-fill').style.width = '5%';
 
     let bananas = null;
-    try { bananas = await runDetection(canvas); }
+    try {
+        bananas = await runDetection(canvas, (done, total) => {
+            el('loading-text').textContent = `Scanning… tile ${done}/${total}`;
+            el('progress-fill').style.width = `${5 + (done / total) * 45}%`;
+        });
+    }
     catch (err) { console.warn('Detection error:', err); }
     el('progress-fill').style.width = '50%';
 
