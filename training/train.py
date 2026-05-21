@@ -1,22 +1,24 @@
 """
-Banana ripeness detector — fine-tune YOLOv11n on the Roboflow banana dataset.
+Banana ripeness classifier — fine-tune YOLOv11n-cls on the Roboflow banana dataset.
+
+The dataset is image-level classification (no bounding boxes), so this trains a
+classifier. In the app, the existing COCO detector finds banana crops, and this
+model classifies their ripeness — replacing the current HSL colour analysis.
 
 Run from the training/ directory:
     python train.py
 
-To retrain with a larger model if mAP is insufficient:
-    MODEL=yolo11s.pt python train.py    # ~5.5MB INT8, better accuracy
-    MODEL=yolo11m.pt python train.py    # ~9.5MB INT8, best accuracy
+To retrain with a larger model if top-1 accuracy is insufficient:
+    MODEL=yolo11s-cls.pt python train.py    # better accuracy, ~6MB INT8
+    MODEL=yolo11m-cls.pt python train.py    # best accuracy, ~10MB INT8
 
 Requires:
     pip install -r requirements.txt
     ROBOFLOW_API_KEY environment variable (free at roboflow.com)
 
 Outputs:
-    ../models/banana_yolov11n.onnx   — INT8-quantised ONNX for all platforms (~1.5MB)
-    ../models/metadata.json          — class names, mAP, training info
-
-The ONNX model is loaded in the app via onnxruntime-web (no TF.js needed).
+    ../models/banana_yolo11n-cls.onnx  — INT8-quantised ONNX (~1MB)
+    ../models/metadata.json            — class names, accuracy, training info
 """
 
 import os, json, shutil, sys
@@ -26,34 +28,31 @@ from pathlib import Path
 
 ROBOFLOW_WORKSPACE = "roboflow-universe-projects"
 ROBOFLOW_PROJECT   = "banana-ripeness-classification"
-ROBOFLOW_VERSION   = 1          # bump if the dataset has been updated
+ROBOFLOW_VERSION   = 1
 
-BASE_MODEL = os.environ.get("MODEL", "yolo11n.pt")  # override via MODEL= env var
+BASE_MODEL = os.environ.get("MODEL", "yolo11n-cls.pt")
 EPOCHS     = 100
-IMGSZ      = 640
-BATCH      = 16                 # reduce to 8 if you hit memory issues
-DEVICE     = "mps"              # 'mps' on Apple Silicon; 'cuda' on NVIDIA; 'cpu' fallback
+IMGSZ      = 224   # standard for classifiers; smaller = faster, sufficient for ripeness
+BATCH      = 32
+DEVICE     = "mps"  # 'mps' on Apple Silicon; 'cuda' on NVIDIA; 'cpu' fallback
 
 DATASET_DIR = Path("./dataset")
 OUTPUT_DIR  = Path("../models")
 
-# Derive output filename from base model name, e.g. yolo11n.pt → banana_yolo11n.onnx
-_model_stem = Path(BASE_MODEL).stem   # e.g. "yolo11n"
+_model_stem = Path(BASE_MODEL).stem       # e.g. "yolo11n-cls"
 ONNX_NAME   = f"banana_{_model_stem}.onnx"
 
-# Map Roboflow class names → our STAGES ids.
-# Preview the dataset first (roboflow.com) to confirm actual label names,
-# then update this dict if they differ.
+# Map Roboflow folder names → our STAGES ids.
+# The folder format uses directory names as class labels.
+# Run once to see actual names, then update if needed.
 CLASS_MAP = {
-    # Roboflow label   : STAGES id
-    "unripe"           : "unripe",
-    "nearly-ripe"      : "nearly",
-    "nearly_ripe"      : "nearly",
-    "ripe"             : "perfect",    # Roboflow "ripe" = our "perfect" sweet spot
-    "overripe"         : "ripe",       # Roboflow "overripe" = our "ripe" stage
-    "very-overripe"    : "overripe",
-    "very_overripe"    : "overripe",
-    # Add more mappings here if the dataset uses different labels
+    "unripe"        : "unripe",
+    "nearly-ripe"   : "nearly",
+    "nearly_ripe"   : "nearly",
+    "ripe"          : "perfect",
+    "overripe"      : "ripe",
+    "very-overripe" : "overripe",
+    "very_overripe" : "overripe",
 }
 
 # ---------------------------------------------------------------------------
@@ -67,46 +66,44 @@ def download_dataset():
     from roboflow import Roboflow
     rf = Roboflow(api_key=api_key)
     project = rf.workspace(ROBOFLOW_WORKSPACE).project(ROBOFLOW_PROJECT)
-    dataset = project.version(ROBOFLOW_VERSION).download("yolov8", location=str(DATASET_DIR))
+    dataset = project.version(ROBOFLOW_VERSION).download("folder", location=str(DATASET_DIR))
     print(f"Dataset saved to {DATASET_DIR}")
     return dataset
 
 
-def patch_class_names(data_yaml: Path):
+def remap_class_dirs(dataset_root: Path) -> list[str]:
     """
-    Rewrites the dataset's data.yaml so class names match our STAGES ids.
-    Prints the original names so you can update CLASS_MAP if needed.
+    Renames class subdirectories (train/valid/test/<class>) to match our STAGES ids.
+    Returns the final sorted class name list.
     """
-    import yaml
-    with open(data_yaml) as f:
-        cfg = yaml.safe_load(f)
+    classes = set()
+    for split in ("train", "valid", "test"):
+        split_dir = dataset_root / split
+        if not split_dir.exists():
+            continue
+        for cls_dir in sorted(split_dir.iterdir()):
+            if not cls_dir.is_dir():
+                continue
+            original = cls_dir.name
+            mapped = CLASS_MAP.get(original.lower().replace(" ", "-"),
+                                   CLASS_MAP.get(original.lower().replace(" ", "_"),
+                                                 original.lower()))
+            if mapped != original:
+                cls_dir.rename(split_dir / mapped)
+                print(f"  {split}/{original} → {split}/{mapped}")
+            classes.add(mapped)
 
-    original = cfg.get("names", [])
-    print(f"Dataset class names: {original}")
-
-    mapped = []
-    for name in original:
-        canonical = CLASS_MAP.get(name.lower().replace(" ", "-"),
-                                  CLASS_MAP.get(name.lower().replace(" ", "_"), name.lower()))
-        mapped.append(canonical)
-
-    if mapped != original:
-        cfg["names"] = mapped
-        with open(data_yaml, "w") as f:
-            yaml.dump(cfg, f)
-        print(f"Remapped → {mapped}")
-    else:
-        print("Class names look good, no remapping needed.")
-
-    return mapped
+    class_names = sorted(classes)
+    print(f"Classes: {class_names}")
+    return class_names
 
 
-def train(data_yaml: Path):
+def train(dataset_root: Path):
     from ultralytics import YOLO
     print(f"\nFine-tuning {BASE_MODEL} for {EPOCHS} epochs on {DEVICE}…")
     model = YOLO(BASE_MODEL)
-    results = model.train(
-        data=str(data_yaml),
+    model.train(
+        data=str(dataset_root),
         epochs=EPOCHS,
         imgsz=IMGSZ,
         batch=BATCH,
@@ -114,34 +111,33 @@ def train(data_yaml: Path):
         project="runs",
         name="banana",
         exist_ok=True,
-        # Augmentation — helps generalise to store shelves, varied lighting
+        # Augmentation
         hsv_h=0.015,
         hsv_s=0.5,
         hsv_v=0.4,
         flipud=0.1,
         fliplr=0.5,
-        mosaic=0.8,
     )
     best_weights = Path("runs/banana/weights/best.pt")
     print(f"\nTraining complete. Best weights: {best_weights}")
-    return best_weights, results
+    return best_weights
 
 
-def validate(weights: Path, data_yaml: Path):
+def validate(weights: Path, dataset_root: Path):
     from ultralytics import YOLO
     print("\nValidating on test set…")
     model = YOLO(str(weights))
-    metrics = model.val(data=str(data_yaml), split="test", imgsz=IMGSZ, device=DEVICE)
-    map50    = float(metrics.box.map50)
-    map50_95 = float(metrics.box.map)
-    print(f"mAP@50: {map50:.3f}   mAP@50-95: {map50_95:.3f}")
-    if map50 < 0.75:
-        print(f"⚠  mAP@50 below 0.75 — consider rerunning with a larger model:")
-        print(f"   MODEL=yolo11s.pt python train.py")
-    return map50, map50_95
+    metrics = model.val(data=str(dataset_root), split="test", imgsz=IMGSZ, device=DEVICE)
+    top1 = float(metrics.top1)
+    top5 = float(metrics.top5)
+    print(f"Top-1 accuracy: {top1:.3f}   Top-5 accuracy: {top5:.3f}")
+    if top1 < 0.80:
+        print(f"⚠  Top-1 below 0.80 — consider a larger model:")
+        print(f"   MODEL=yolo11s-cls.pt python train.py")
+    return top1, top5
 
 
-def export_onnx(weights: Path, class_names: list, map50: float, map50_95: float):
+def export_onnx(weights: Path, class_names: list, top1: float, top5: float):
     from ultralytics import YOLO
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     dest = OUTPUT_DIR / ONNX_NAME
@@ -155,45 +151,43 @@ def export_onnx(weights: Path, class_names: list, map50: float, map50_95: float)
 
     meta = {
         "model"      : _model_stem,
+        "type"       : "classification",
         "onnx_file"  : ONNX_NAME,
         "classes"    : class_names,
         "imgsz"      : IMGSZ,
-        "map50"      : round(map50, 4),
-        "map50_95"   : round(map50_95, 4),
+        "top1"       : round(top1, 4),
+        "top5"       : round(top5, 4),
         "trained_on" : f"Roboflow {ROBOFLOW_WORKSPACE}/{ROBOFLOW_PROJECT} v{ROBOFLOW_VERSION}",
     }
-    meta_path = OUTPUT_DIR / "metadata.json"
-    with open(meta_path, "w") as f:
+    with open(OUTPUT_DIR / "metadata.json", "w") as f:
         json.dump(meta, f, indent=2)
-    print(f"Metadata written to {meta_path}")
+    print(f"Metadata written to {OUTPUT_DIR / 'metadata.json'}")
 
     return dest, size_mb
 
 
 if __name__ == "__main__":
-    # 1. Download dataset
-    if not (DATASET_DIR / "data.yaml").exists():
+    # 1. Download dataset (folder format for classification)
+    if not (DATASET_DIR / "train").exists():
         download_dataset()
     else:
         print(f"Dataset already present at {DATASET_DIR}, skipping download.")
 
-    data_yaml = DATASET_DIR / "data.yaml"
-
-    # 2. Patch class names to match our STAGES ids
-    class_names = patch_class_names(data_yaml)
+    # 2. Remap class directory names to our STAGES ids
+    class_names = remap_class_dirs(DATASET_DIR)
 
     # 3. Train
-    best_weights, _ = train(data_yaml)
+    best_weights = train(DATASET_DIR)
 
     # 4. Validate on test set
-    map50, map50_95 = validate(best_weights, data_yaml)
+    top1, top5 = validate(best_weights, DATASET_DIR)
 
     # 5. Export ONNX
-    dest, size_mb = export_onnx(best_weights, class_names, map50, map50_95)
+    dest, size_mb = export_onnx(best_weights, class_names, top1, top5)
 
     print(f"\n✓  Done!  {dest}  ({size_mb:.2f} MB)")
-    print(f"   mAP@50 = {map50:.3f}   mAP@50-95 = {map50_95:.3f}")
-    if map50 < 0.85:
-        print(f"\nTip: mAP is below 0.85. Retry with a larger model for better accuracy:")
-        print(f"   MODEL=yolo11s.pt python train.py")
-    print(f"\nNext: commit models/ then run app.js integration step.")
+    print(f"   Top-1 accuracy = {top1:.3f}")
+    if top1 < 0.85:
+        print(f"\nTip: accuracy below 0.85. Retry with a larger model:")
+        print(f"   MODEL=yolo11s-cls.pt python train.py")
+    print(f"\nNext: commit models/ then wire up app.js classification integration.")
