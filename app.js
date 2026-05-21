@@ -1,11 +1,11 @@
 import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js';
-import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/esm/ort.min.js';
+import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/esm/ort.min.js';
 
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
 // Serve WASM from CDN; disable threading (avoids COOP/COEP header requirement)
-ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.0/dist/';
+ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
 ort.env.wasm.numThreads = 1;
 
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
