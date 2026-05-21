@@ -218,8 +218,11 @@ if __name__ == "__main__":
     class_names = remap_class_dirs(DATASET_DIR)
 
     if args.weights:
-        print(f"\nSkipping training — using existing weights: {args.weights}")
-        best_weights = args.weights
+        best_weights = args.weights.resolve()
+        if not best_weights.exists():
+            sys.exit(f"Weights not found: {best_weights}\n"
+                     f"(script runs from {Path.cwd()}, path resolved from there)")
+        print(f"\nSkipping training — using existing weights: {best_weights}")
     else:
         best_weights = train(DATASET_DIR)
 
