@@ -10,6 +10,7 @@ dir = "training"
 run = "pip install -r requirements.txt"
 
 [tasks.train]
-description = "Fine-tune YOLOv11n on the banana ripeness dataset (set ROBOFLOW_API_KEY first)"
+description = "Fine-tune YOLOv11n-cls on the banana ripeness dataset (set ROBOFLOW_API_KEY first)"
 dir = "training"
+depends = ["install"]
 run = "python train.py"
