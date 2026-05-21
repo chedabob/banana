@@ -56,26 +56,12 @@ async function loadClassifier() {
     const meta = await fetch('./models/metadata.json').then(r => r.json());
     classifierClasses = meta.classes;
 
-    // Stream the model file so we can show download progress
     const url = `./models/${meta.onnx_file}`;
-    const res = await fetch(url);
-    const total = parseInt(res.headers.get('content-length') || '0');
-    const reader = res.body.getReader();
-    const chunks = [];
-    let received = 0;
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.length;
-        if (total) setSplash(`Downloading banana brain… ${Math.round(received / total * 100)}%`, 5 + (received / total) * 75);
-    }
-    const buffer = new Uint8Array(received);
-    let pos = 0;
-    for (const chunk of chunks) { buffer.set(chunk, pos); pos += chunk.length; }
+    setSplash('Loading banana brain…', 20);
+    const arrayBuffer = await fetch(url).then(r => r.arrayBuffer());
 
     setSplash('Initialising model…', 82);
-    classifierSession = await ort.InferenceSession.create(buffer.buffer, {
+    classifierSession = await ort.InferenceSession.create(arrayBuffer, {
         executionProviders: ['wasm']
     });
 }
@@ -158,9 +144,10 @@ async function loadModels() {
             .catch(err => console.warn('Detector unavailable:', err));
     } catch (err) {
         console.error('Classifier load failed:', err);
-        setModeIndicator('Colour analysis only');
-        setSplash('⚠ Model failed — colour analysis only', 100);
-        await delay(2500);
+        const msg = err?.message ?? String(err);
+        setModeIndicator('Model failed — colour analysis only');
+        setSplash(`⚠ ${msg.slice(0, 120)}`, 100);
+        await delay(6000);
         hideSplash();
     } finally {
         modelLoading = false;
