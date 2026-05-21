@@ -196,29 +196,48 @@ function stopCamera() {
     cameraStream = null;
 }
 
+// ---- NMS (prevents same banana being detected twice) ----
+
+function boxIoU(a, b) {
+    const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
+    const x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
+    const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+    const union = a.w * a.h + b.w * b.h - inter;
+    return union > 0 ? inter / union : 0;
+}
+
+function nms(detections, iouThreshold = 0.45) {
+    const sorted = [...detections].sort((a, b) => b.score - a.score);
+    const keep = [];
+    for (const d of sorted) {
+        if (keep.every(k => boxIoU(k.box, d.box) < iouThreshold)) keep.push(d);
+    }
+    return keep;
+}
+
 // ---- Detection ----
 
 async function runDetection(canvas) {
     if (cocoModel) {
         const preds = await cocoModel.detect(canvas);
-        return preds
+        return nms(preds
             .filter(p => p.class === 'banana' && p.score > 0.45)
             .map(p => ({
                 label: p.class, score: p.score,
                 box: { x: Math.round(p.bbox[0]), y: Math.round(p.bbox[1]),
                        w: Math.round(p.bbox[2]), h: Math.round(p.bbox[3]) }
-            }));
+            })));
     }
     if (detector) {
         const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
         const preds = await detector(dataUrl, { threshold: 0.45 });
-        return preds
+        return nms(preds
             .filter(p => p.label === 'banana')
             .map(p => ({
                 label: p.label, score: p.score,
                 box: { x: Math.round(p.box.xmin), y: Math.round(p.box.ymin),
                        w: Math.round(p.box.xmax - p.box.xmin), h: Math.round(p.box.ymax - p.box.ymin) }
-            }));
+            })));
     }
     return null;
 }
@@ -306,7 +325,7 @@ function drawBananaBoxes(canvas, ranked) {
 function showShelfResult(ranked) {
     const div = el('shelf-result');
     if (!div) return;
-    if (ranked.length === 0) { hide('shelf-result'); return; }
+    if (ranked.length <= 1) { hide('shelf-result'); return; }
     div.innerHTML = ranked.map((b, i) =>
         `<div class="shelf-item${i===0?' shelf-best':''}">
             <span class="shelf-rank">${i+1}</span>
