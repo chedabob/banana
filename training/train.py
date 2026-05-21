@@ -1,18 +1,22 @@
 """
-Banana ripeness detector — fine-tune YOLOv8n on the Roboflow banana dataset.
+Banana ripeness detector — fine-tune YOLOv11n on the Roboflow banana dataset.
 
 Run from the training/ directory:
     python train.py
+
+To retrain with a larger model if mAP is insufficient:
+    MODEL=yolo11s.pt python train.py    # ~5.5MB INT8, better accuracy
+    MODEL=yolo11m.pt python train.py    # ~9.5MB INT8, best accuracy
 
 Requires:
     pip install -r requirements.txt
     ROBOFLOW_API_KEY environment variable (free at roboflow.com)
 
 Outputs:
-    ../models/banana_yolov8n.onnx     — INT8-quantised ONNX for all platforms (~1.5MB)
-    ../models/metadata.json           — class names, mAP, training info
+    ../models/banana_yolov11n.onnx   — INT8-quantised ONNX for all platforms (~1.5MB)
+    ../models/metadata.json          — class names, mAP, training info
 
-The ONNX model is loaded in the app via onnxruntime-web.
+The ONNX model is loaded in the app via onnxruntime-web (no TF.js needed).
 """
 
 import os, json, shutil, sys
@@ -24,13 +28,18 @@ ROBOFLOW_WORKSPACE = "roboflow-universe-projects"
 ROBOFLOW_PROJECT   = "banana-ripeness-classification"
 ROBOFLOW_VERSION   = 1          # bump if the dataset has been updated
 
-EPOCHS   = 100
-IMGSZ    = 640
-BATCH    = 16                   # reduce to 8 if you hit memory issues
-DEVICE   = "mps"                # 'mps' on Apple Silicon; 'cuda' on NVIDIA; 'cpu' fallback
+BASE_MODEL = os.environ.get("MODEL", "yolo11n.pt")  # override via MODEL= env var
+EPOCHS     = 100
+IMGSZ      = 640
+BATCH      = 16                 # reduce to 8 if you hit memory issues
+DEVICE     = "mps"              # 'mps' on Apple Silicon; 'cuda' on NVIDIA; 'cpu' fallback
 
 DATASET_DIR = Path("./dataset")
 OUTPUT_DIR  = Path("../models")
+
+# Derive output filename from base model name, e.g. yolo11n.pt → banana_yolo11n.onnx
+_model_stem = Path(BASE_MODEL).stem   # e.g. "yolo11n"
+ONNX_NAME   = f"banana_{_model_stem}.onnx"
 
 # Map Roboflow class names → our STAGES ids.
 # Preview the dataset first (roboflow.com) to confirm actual label names,
@@ -94,8 +103,8 @@ def patch_class_names(data_yaml: Path):
 
 def train(data_yaml: Path):
     from ultralytics import YOLO
-    print(f"\nFine-tuning YOLOv8n for {EPOCHS} epochs on {DEVICE}…")
-    model = YOLO("yolov8n.pt")
+    print(f"\nFine-tuning {BASE_MODEL} for {EPOCHS} epochs on {DEVICE}…")
+    model = YOLO(BASE_MODEL)
     results = model.train(
         data=str(data_yaml),
         epochs=EPOCHS,
@@ -127,25 +136,26 @@ def validate(weights: Path, data_yaml: Path):
     map50_95 = float(metrics.box.map)
     print(f"mAP@50: {map50:.3f}   mAP@50-95: {map50_95:.3f}")
     if map50 < 0.75:
-        print("⚠  mAP@50 below 0.75 — consider more epochs or checking class mapping.")
+        print(f"⚠  mAP@50 below 0.75 — consider rerunning with a larger model:")
+        print(f"   MODEL=yolo11s.pt python train.py")
     return map50, map50_95
 
 
 def export_onnx(weights: Path, class_names: list, map50: float, map50_95: float):
     from ultralytics import YOLO
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    dest = OUTPUT_DIR / "banana_yolov8n.onnx"
+    dest = OUTPUT_DIR / ONNX_NAME
 
-    print(f"\nExporting ONNX (INT8 quantised)…")
+    print(f"\nExporting ONNX (INT8 quantised) → {dest}…")
     model = YOLO(str(weights))
-    # half=False because int8=True is the quantisation path; imgsz must match training
     export_path = model.export(format="onnx", imgsz=IMGSZ, int8=True, simplify=True)
     shutil.copy(export_path, dest)
     size_mb = dest.stat().st_size / 1e6
     print(f"Saved {dest}  ({size_mb:.2f} MB)")
 
-    # Write metadata for the app
     meta = {
+        "model"      : _model_stem,
+        "onnx_file"  : ONNX_NAME,
         "classes"    : class_names,
         "imgsz"      : IMGSZ,
         "map50"      : round(map50, 4),
@@ -183,4 +193,7 @@ if __name__ == "__main__":
 
     print(f"\n✓  Done!  {dest}  ({size_mb:.2f} MB)")
     print(f"   mAP@50 = {map50:.3f}   mAP@50-95 = {map50_95:.3f}")
-    print(f"\nNext: commit models/ and update WORKER_URL in app.js if using Cloudflare.")
+    if map50 < 0.85:
+        print(f"\nTip: mAP is below 0.85. Retry with a larger model for better accuracy:")
+        print(f"   MODEL=yolo11s.pt python train.py")
+    print(f"\nNext: commit models/ then run app.js integration step.")

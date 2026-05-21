@@ -1,6 +1,8 @@
 # Banana Detector — Training
 
-Fine-tunes YOLOv8n on a banana ripeness dataset to produce a small ONNX model (~1.5 MB) that detects bananas and classifies their ripeness in one pass.
+Fine-tunes YOLOv11n on a banana ripeness dataset to produce a small ONNX model (~1.5 MB) that detects bananas and classifies their ripeness in one pass.
+
+The trained model is loaded in the browser via `onnxruntime-web` — no TF.js needed, works on all platforms including iOS.
 
 ## Requirements
 
@@ -24,17 +26,28 @@ export ROBOFLOW_API_KEY=your_key_here
 python train.py
 ```
 
-Training takes **1–3 hours** on M4. Progress prints to the terminal with mAP scores after each epoch.
+Training takes **1–2 hours** on M4. Progress prints to the terminal with mAP scores after each epoch.
 
 When done, two files appear in `../models/`:
-- `banana_yolov8n.onnx` — the quantised model (~1.5 MB)
-- `metadata.json` — class names and accuracy scores
+- `banana_yolo11n.onnx` — the quantised model (~1.5 MB)
+- `metadata.json` — class names, accuracy scores, model name
+
+## If mAP is below 0.85
+
+Retrain with a slightly larger model — just one env var change, nothing else in the app changes:
+
+```bash
+MODEL=yolo11s.pt python train.py   # ~5.5MB INT8, noticeably better accuracy
+MODEL=yolo11m.pt python train.py   # ~9.5MB INT8, best accuracy
+```
+
+The output ONNX and metadata.json are named automatically from the model (e.g. `banana_yolo11s.onnx`). Update the filename reference in `app.js` accordingly.
 
 ## Class mapping
 
 The Roboflow dataset may use different label names than the app's internal STAGES ids (`unripe`, `nearly`, `perfect`, `ripe`, `overripe`).
 
-`train.py` prints the raw dataset class names on first run. If the mapping looks wrong, update the `CLASS_MAP` dict at the top of `train.py` and re-run (training output is cached, so only the export step re-runs if weights already exist).
+`train.py` prints the raw dataset class names on first run. If the mapping looks wrong, update the `CLASS_MAP` dict at the top of `train.py` and re-run (the dataset is already downloaded, so only training reruns).
 
 ## Checking results
 
@@ -50,9 +63,8 @@ m.predict('path/to/banana.jpg', save=True)
 
 Results are saved to `runs/banana/predict/`.
 
-## Re-training
+## Re-training from scratch
 
-To start fresh:
 ```bash
 rm -rf runs/ dataset/
 python train.py
