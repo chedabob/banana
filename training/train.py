@@ -74,14 +74,29 @@ def download_dataset():
 def remap_class_dirs(dataset_root: Path) -> list[str]:
     """
     Renames class subdirectories (train/valid/test/<class>) to match our STAGES ids.
-    Uses a two-pass rename to avoid conflicts when a target name is also a source name
-    (e.g. overripe→ripe conflicts with ripe→perfect if done in alphabetical order).
+    Safe to re-run: skips already-renamed dirs and cleans up __tmp_* leftovers from
+    interrupted previous runs. Uses two-pass rename to avoid chain conflicts.
     """
     classes = set()
     for split in ("train", "valid", "test"):
         split_dir = dataset_root / split
         if not split_dir.exists():
             continue
+
+        # Clean up __tmp_* dirs left by interrupted previous runs
+        for stale in split_dir.glob("__tmp_*__"):
+            original_name = stale.name[6:-2]   # strip __tmp_ prefix and __ suffix
+            mapped = CLASS_MAP.get(original_name.lower().replace(" ", "-"),
+                                   CLASS_MAP.get(original_name.lower().replace(" ", "_"),
+                                                 original_name.lower()))
+            dst = split_dir / mapped
+            if dst.exists():
+                import shutil
+                shutil.rmtree(stale)
+                print(f"  removed stale {stale.name} (target {mapped} already exists)")
+            else:
+                stale.rename(dst)
+                print(f"  recovered {stale.name} → {split}/{mapped}")
 
         renames = []
         for cls_dir in sorted(split_dir.iterdir()):
@@ -93,8 +108,12 @@ def remap_class_dirs(dataset_root: Path) -> list[str]:
                                                  original.lower()))
             classes.add(mapped)
             if mapped != original:
-                renames.append((cls_dir, split_dir / mapped))
-                print(f"  {split}/{original} → {split}/{mapped}")
+                dst = split_dir / mapped
+                if dst.exists():
+                    print(f"  {split}/{original} → {split}/{mapped} (already done)")
+                else:
+                    renames.append((cls_dir, dst))
+                    print(f"  {split}/{original} → {split}/{mapped}")
 
         # Pass 1: rename to unique temp names to avoid chain conflicts
         temp_map = []
