@@ -138,10 +138,29 @@ ONNX is precached via `Promise.allSettled` (non-fatal — SW installs even if ON
 
 ---
 
+## Lighting & Torch Toggle (discussed, decided against for now)
+
+The user noted that bananas look yellower (riper) under supermarket LED/fluorescent lighting (poor CRI) but greener/unriper in natural light. They asked whether a torch/flash button would help produce consistent classification.
+
+**Decision: deferred.** Reasons:
+- The model classifies by learned texture/shape/colour patterns, not raw pixel HSL. At 99.1% Top-1 it's already robust to lighting variation.
+- Torch creates its own colour cast (warm white, harsh shadows, specular highlights on shiny banana skin) — also not in the training data, so it doesn't fix the CRI mismatch, just substitutes one bias for another.
+- For the primary use case (shelf scanning), torch range is ~0.5–1m — useless at shelf distance.
+
+**What torch IS good for:** close-up single-banana in a dim kitchen. Worth adding later if the user wants it.
+
+**Implementation notes (if added):**
+- API: `track.applyConstraints({ advanced: [{ torch: true }] })`
+- Capability check: `track.getCapabilities?.().torch` — returns true on Chrome Android, Safari iOS 16.4+; false/undefined on desktop
+- Add `btn-torch` button that's hidden until camera starts and torch capability is confirmed
+- Torch turns off automatically when `track.stop()` is called (no explicit cleanup needed)
+- Button should hide after capture and reappear on retake
+
 ## Potential Next Steps
 
 1. **Verify classification fix** (output tensor name) — load app, scan banana, check console for classifier errors
 2. **Lower COCO-SSD threshold** from 0.4 → 0.3 if far-away shelf bananas are missed
 3. **Add console debug for tile count** to verify tiling fires on large images
 4. **Retrain with larger model** if classification accuracy is still poor after tensor fix — try `yolo11m-cls.pt`
-5. **Detection-only classifier** (longer term) — train YOLOv11n detection model if bounding-box annotations can be sourced
+5. **Torch toggle button** — see notes above; straightforward to add if wanted
+6. **Detection-only classifier** (longer term) — train YOLOv11n detection model if bounding-box annotations can be sourced
