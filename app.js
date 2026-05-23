@@ -167,9 +167,10 @@ async function startCamera() {
     hide('btn-start', 'start-screen', 'result', 'shelf-result');
     try {
         cameraStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode:'environment', width:{ ideal:1280 }, height:{ ideal:960 } }
+            video: { facingMode:'environment', width:{ ideal:1920 }, height:{ ideal:1440 } }
         });
         el('video').srcObject = cameraStream;
+        document.body.classList.add('camera-active');
         show('camera-view', 'btn-capture');
     } catch {
         alert('Camera access was denied. Please allow camera access and reload the page.');
@@ -188,6 +189,7 @@ function captureFrame() {
 function stopCamera() {
     cameraStream?.getTracks().forEach(t => t.stop());
     cameraStream = null;
+    document.body.classList.remove('camera-active');
 }
 
 // ---- NMS (prevents same banana being detected twice) ----

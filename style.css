@@ -58,11 +58,28 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:-
 .app-main { flex:1; padding:16px; display:flex; flex-direction:column; gap:16px; overflow-y:auto; }
 
 /* Camera / Preview */
-.camera-view, .preview-view { position:relative; background:#000; border-radius:16px; overflow:hidden; aspect-ratio:4/3; max-height:70vh; flex-shrink:0; }
-.camera-view video, .preview-view img { width:100%; height:100%; object-fit:cover; display:block; }
+.camera-view { position:relative; background:#000; border-radius:16px; overflow:hidden; aspect-ratio:4/3; flex-shrink:0; }
+.preview-view { position:relative; background:#000; border-radius:16px; overflow:hidden; flex-shrink:0; }
+.camera-view video { width:100%; height:100%; object-fit:cover; display:block; }
+.preview-view img { width:100%; height:auto; max-height:75vh; object-fit:contain; display:block; }
 .camera-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
 .focus-box { width:55%; aspect-ratio:1; border:2px solid var(--yellow); border-radius:14px; box-shadow:0 0 0 9999px rgba(0,0,0,.25); animation:pulse 2.5s ease-in-out infinite; }
 @keyframes pulse { 0%,100%{border-color:rgba(255,215,0,.45)} 50%{border-color:rgba(255,215,0,1)} }
+
+/* Fullscreen camera — active while live viewfinder is shown */
+body.camera-active { overflow:hidden; }
+body.camera-active .app-header,
+body.camera-active .samples-section,
+body.camera-active .app-footer { display:none; }
+body.camera-active #camera-view {
+    position:fixed; inset:0; z-index:100;
+    border-radius:0; aspect-ratio:unset; max-height:none;
+}
+body.camera-active .controls {
+    position:fixed; bottom:0; left:0; right:0; z-index:101;
+    padding:20px 16px max(28px, env(safe-area-inset-bottom));
+    background:linear-gradient(transparent, rgba(0,0,0,0.55));
+}
 
 /* Start screen */
 .start-screen { text-align:center; padding:28px 20px; background:rgba(255,215,0,.04); border:1px solid rgba(255,215,0,.12); border-radius:16px; }
