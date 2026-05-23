@@ -119,7 +119,7 @@ Ultralytics puts classification runs under `runs/classify/` (not `runs/`), so we
 
 ## Service Worker
 
-Cache name: `banana-detector-v6`. Bump to `v7` to force-clear on all clients.
+Cache name: `banana-detector-v7`. Bump to `v8` to force-clear on all clients.
 
 - ONNX precached via `Promise.allSettled` (non-fatal — SW installs even if ONNX fetch times out)
 - `updateViaCache: 'none'` in SW registration so app.js is always re-validated on load
@@ -150,11 +150,24 @@ The user noted that bananas look yellower (riper) under supermarket LED/fluoresc
 
 ## Known Issues
 
-### Classification accuracy
-On a banana ripeness chart (#1 very green → #7 brown), the model called most bananas "Perfect" except #2. Two possible causes investigated:
+### Classification accuracy — all bananas showing "Perfect"
 
-1. **Output tensor name bug (now fixed):** `quantize_dynamic` may rename `output0`; silent catch returned `null` → HSL fallback → yellow bananas all classified as "Perfect". Fixed with robust tensor lookup.
-2. **Distribution shift:** model trained on full bunch images, tested on individual banana crops. May still affect edge cases — not fully diagnosed. Test after the tensor fix to see if accuracy improves.
+On a real supermarket shelf (15 bunches detected), every single bunch was classified as "Perfect to Eat" including clearly green ones.
+
+**Diagnostic added:** The model-info line now shows `ONNX·87%` or `HSL` so you can see which path was taken. The console logs per-class probabilities: `[cls] nearly:2% overripe:1% perfect:94% ripe:2% unripe:1%`. The shelf list also shows confidence % per bunch.
+
+**Most likely cause — distribution shift:** The Roboflow training dataset contains clean, well-lit single-banana images. In the app we feed COCO-SSD bounding-box crops of entire *bunches* in complex supermarket lighting. The model never saw bunch crops during training and defaults to "perfect" (the most common class in the training set, and the class that covers the broadest yellow range).
+
+**Training fix applied:** `train.py` augmentation significantly increased for the next retrain:
+- `hsv_s=0.7` (was 0.5) — handles supermarket CRI / washed-out lighting
+- `hsv_v=0.5` (was 0.4) — handles shadows and bright spots
+- `hsv_h=0.05` (was 0.015) — more hue variation
+- `degrees=15` (new) — bunches on shelves appear at many angles
+- `scale=0.3` (new) — COCO-SSD crops vary in how much banana fills the frame
+
+**To retrain:** `cd training && mise run train` (or `MODEL=yolo11m-cls.pt mise run train` for larger model). This does NOT require new training data — just the augmentation changes above.
+
+**Longer-term fix:** Get training images that look like the inference inputs — bunch crops from supermarket photos. Even 200–500 additional labeled images of bunches would help enormously. The Roboflow dataset only has single-banana images.
 
 ### Intermittent model load failures
 User reports "mode load failed" appearing on refresh occasionally. Possible causes:

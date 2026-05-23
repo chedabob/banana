@@ -137,6 +137,7 @@ body.camera-active .controls {
 .shelf-emoji { font-size:1.25rem; }
 .shelf-label { font-size:.875rem; color:var(--text); font-weight:500; }
 .shelf-best .shelf-label { color:var(--yellow); }
+.shelf-conf { font-size:.7rem; color:var(--muted); margin-left:5px; font-weight:400; }
 
 .hidden { display:none !important; }
 

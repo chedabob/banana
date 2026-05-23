@@ -93,6 +93,7 @@ async function classifyRipeness(cropCanvas) {
         const sum  = exps.reduce((a, b) => a + b, 0);
         const probs = exps.map(x => x / sum);
         const idx = probs.indexOf(Math.max(...probs));
+        console.log('[cls]', classifierClasses.map((c, i) => `${c}:${(probs[i]*100).toFixed(0)}%`).join(' '));
         const stage = STAGES.find(s => s.id === classifierClasses[idx]) ?? STAGES[2];
         return { stage, confidence: probs[idx] };
     } catch (err) {
@@ -358,13 +359,14 @@ function showShelfResult(ranked) {
     const div = el('shelf-result');
     if (!div) return;
     if (ranked.length <= 1) { hide('shelf-result'); return; }
-    div.innerHTML = ranked.map((b, i) =>
-        `<div class="shelf-item${i===0?' shelf-best':''}">
+    div.innerHTML = ranked.map((b, i) => {
+        const conf = b.confidence != null ? `<span class="shelf-conf">${Math.round(b.confidence * 100)}%</span>` : '';
+        return `<div class="shelf-item${i===0?' shelf-best':''}">
             <span class="shelf-rank">${i+1}</span>
             <span class="shelf-emoji" aria-hidden="true">${b.stage.emoji}</span>
-            <span class="shelf-label">${b.stage.title}</span>
-        </div>`
-    ).join('');
+            <span class="shelf-label">${b.stage.title}${conf}</span>
+        </div>`;
+    }).join('');
     show('shelf-result');
 }
 
@@ -393,7 +395,7 @@ async function analyze(canvas) {
             const crop = cropCanvas(canvas, b.box);
             const cls  = await classifyRipeness(crop);
             const stage = cls?.stage ?? hslFallback(crop, 0.08) ?? STAGES[2];
-            return { ...b, stage };
+            return { ...b, stage, confidence: cls?.confidence ?? null, usedOnnx: cls !== null };
         }));
 
         analysed.sort((a, b) => Math.abs(a.stage.pos - 50) - Math.abs(b.stage.pos - 50));
@@ -412,8 +414,14 @@ async function analyze(canvas) {
 
         const best = analysed[0];
         const detLabel = isIOS ? 'COCO-SSD' : 'YOLOS-tiny';
+        const onnxCount = analysed.filter(b => b.usedOnnx).length;
+        const avgConf = onnxCount
+            ? Math.round(analysed.filter(b => b.confidence != null).reduce((s, b) => s + b.confidence, 0) / onnxCount * 100)
+            : null;
+        const clsLabel = onnxCount === analysed.length ? `ONNX·${avgConf}%`
+            : onnxCount > 0 ? `ONNX+HSL·${avgConf}%` : 'HSL';
         showResult(best.stage.emoji, best.stage.title, best.stage.desc, best.stage.pos,
-            `Banana-v1 · ${detLabel} · ${analysed.length} banana${analysed.length>1?'s':''}`);
+            `Banana-v1 · ${detLabel} · ${clsLabel} · ${analysed.length} banana${analysed.length>1?'s':''}`);
 
     } else {
         el('loading-text').textContent = 'Analysing…';

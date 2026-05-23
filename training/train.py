@@ -144,12 +144,16 @@ def train(dataset_root: Path):
         project="runs",
         name="banana",
         exist_ok=True,
-        # Augmentation
-        hsv_h=0.015,
-        hsv_s=0.5,
-        hsv_v=0.4,
+        # Augmentation — aggressive colour/geometry variation to handle real-world
+        # lighting (supermarket LED, shadows) and crops of bunches vs single bananas
+        hsv_h=0.05,    # ±5% hue shift handles CRI differences between light sources
+        hsv_s=0.7,     # wide saturation range covers washed-out vs vivid conditions
+        hsv_v=0.5,     # brightness range handles shadows and harsh store lighting
         flipud=0.1,
         fliplr=0.5,
+        degrees=15,    # banana bunches appear at many angles on a shelf
+        translate=0.1,
+        scale=0.3,     # crops from COCO-SSD vary in how much banana fills the frame
     )
     save_dir = Path(results.save_dir)
     best_weights = save_dir / "weights" / "best.pt"
